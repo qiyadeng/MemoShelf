@@ -470,7 +470,7 @@ const handleBulkExport = () => {
 .settings-section {
   margin-bottom: 32px;
   padding-bottom: 24px;
-  border-bottom: 1px solid #404040;
+  border-bottom: 1px solid var(--border);
 }
 
 .settings-section:last-child {
@@ -480,37 +480,37 @@ const handleBulkExport = () => {
 
 .settings-section h3 {
   margin: 0 0 8px 0;
-  color: #ffffff;
+  color: var(--text-primary);
   font-size: 16px;
   font-weight: 600;
 }
 
 .section-description {
   margin: 0 0 16px 0;
-  color: #cccccc;
+  color: var(--text-secondary);
   font-size: 14px;
 }
 
 .tag-input {
   width: 100%;
   padding: 12px;
-  border: 1px solid #404040;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background-color: #1a1a1a;
-  color: #ffffff;
+  background-color: var(--bg-input);
+  color: var(--text-primary);
   font-size: 14px;
   box-sizing: border-box;
 }
 
 .tag-input:focus {
   outline: none;
-  border-color: #ec5002ee;
+  border-color: var(--accent);
 }
 
 .help-text {
   display: block;
   margin-top: 4px;
-  color: #999;
+  color: var(--text-tertiary);
   font-size: 12px;
 }
 
@@ -533,24 +533,6 @@ const handleBulkExport = () => {
   gap: 8px;
 }
 
-.export-button {
-  background-color: #ec5002ee;
-  color: #ffffff;
-}
-
-.export-button:hover {
-  background-color: #d4470a;
-}
-
-.import-button {
-  background-color: #ec5002ee;
-  color: #ffffff;
-}
-
-.import-button:hover {
-  background-color: #d4470a;
-}
-
 .stats-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -562,18 +544,18 @@ const handleBulkExport = () => {
   justify-content: space-between;
   align-items: center;
   padding: 12px;
-  background-color: #1a1a1a;
+  background-color: var(--bg-input);
   border-radius: 8px;
-  border: 1px solid #404040;
+  border: 1px solid var(--border);
 }
 
 .stat-label {
-  color: #cccccc;
+  color: var(--text-secondary);
   font-size: 14px;
 }
 
 .stat-value {
-  color: #ffffff;
+  color: var(--text-primary);
   font-weight: 600;
   font-size: 16px;
 }
@@ -586,7 +568,7 @@ const handleBulkExport = () => {
 .inline-suggestion {
   position: absolute;
   pointer-events: none;
-  color: #666666;
+  color: var(--text-muted);
   font-size: 14px;
   font-family: inherit;
   white-space: nowrap;
@@ -606,31 +588,31 @@ const handleBulkExport = () => {
   height: 32px;
   border: none;
   border-radius: 16px;
-  background: #2a2a2a;
-  color: #b3b3b3;
+  background: var(--bg-surface);
+  color: var(--text-placeholder);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.2s;
-  border: 1px solid #404040;
+  border: 1px solid var(--border);
   flex-shrink: 0;
 }
 
 .export-filter-button:hover {
-  background: #3a3a3a;
-  color: #ffffff;
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .export-filter-dropdown {
   position: absolute;
   top: 100%;
   right: 0;
-  background: #2d2d2d;
-  border: 1px solid #404040;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  z-index: 1000;
+  box-shadow: 0 4px 12px var(--shadow);
+  z-index: var(--z-dropdown);
   margin-top: 4px;
   width: 300px;
   max-height: 400px;
@@ -642,30 +624,10 @@ const handleBulkExport = () => {
   justify-content: space-between;
   align-items: center;
   padding: 12px 16px;
-  border-bottom: 1px solid #404040;
+  border-bottom: 1px solid var(--border);
   font-size: 14px;
   font-weight: 600;
-  color: #ffffff;
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  color: #999;
-  font-size: 18px;
-  cursor: pointer;
-  padding: 0;
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-}
-
-.close-btn:hover {
-  background: #404040;
-  color: #ffffff;
+  color: var(--text-primary);
 }
 
 .export-filter-list {
@@ -685,12 +647,12 @@ const handleBulkExport = () => {
 }
 
 .export-filter-item:hover {
-  background: #3a3a3a;
+  background: var(--bg-hover);
 }
 
 .export-filter-item.selected {
-  background: #ec5002ee;
-  color: #ffffff;
+  background: var(--accent);
+  color: var(--text-primary);
 }
 
 .tag-name {
@@ -698,7 +660,7 @@ const handleBulkExport = () => {
 }
 
 .checkmark {
-  color: #ffffff;
+  color: var(--text-primary);
   font-weight: bold;
   margin-left: 8px;
 }
@@ -707,7 +669,7 @@ const handleBulkExport = () => {
   display: flex;
   justify-content: space-between;
   padding: 12px 16px;
-  border-top: 1px solid #404040;
+  border-top: 1px solid var(--border);
   gap: 8px;
 }
 
@@ -723,21 +685,21 @@ const handleBulkExport = () => {
 }
 
 .clear-all-btn {
-  background: #404040;
-  color: #ffffff;
+  background: var(--border);
+  color: var(--text-primary);
 }
 
 .clear-all-btn:hover {
-  background: #505050;
+  background: var(--border-hover);
 }
 
 .apply-btn {
-  background: #ec5002ee;
-  color: #ffffff;
+  background: var(--accent);
+  color: var(--text-primary);
 }
 
 .apply-btn:hover {
-  background: #d64502;
+  background: var(--accent-hover);
 }
 
 /* Button icon and counter styles */
@@ -758,9 +720,9 @@ const handleBulkExport = () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: #1a1a1a;
+  background: var(--bg-input);
   padding: 0 12px;
-  border-bottom: 1px solid #404040;
+  border-bottom: 1px solid var(--border);
   gap: 8px;
 }
 
@@ -774,7 +736,7 @@ const handleBulkExport = () => {
   padding: 12px 16px;
   background: transparent;
   border: none;
-  color: #999;
+  color: var(--text-tertiary);
   font-size: 13px;
   font-weight: 400;
   cursor: pointer;
@@ -784,18 +746,23 @@ const handleBulkExport = () => {
 }
 
 .tab-button:hover {
-  color: #ffffff;
+  color: var(--text-primary);
+}
+
+.tab-button:focus-visible {
+  outline: none;
+  color: var(--text-primary);
 }
 
 .tab-button.active {
-  color: #ffffff;
-  border-bottom-color: #ec5002ee;
+  color: var(--text-primary);
+  border-bottom-color: var(--accent);
 }
 
 .close-button {
   background: none;
   border: none;
-  color: #999;
+  color: var(--text-tertiary);
   font-size: 24px;
   cursor: pointer;
   padding: 0;
@@ -809,8 +776,14 @@ const handleBulkExport = () => {
 }
 
 .close-button:hover {
-  background: #404040;
-  color: #ffffff;
+  background: var(--border);
+  color: var(--text-primary);
+}
+
+.close-button:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 /* Command Management Tab */
@@ -824,7 +797,7 @@ const handleBulkExport = () => {
 
 .management-controls {
   padding-bottom: 16px;
-  border-bottom: 1px solid #404040;
+  border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 
@@ -839,10 +812,10 @@ const handleBulkExport = () => {
   height: 32px;
   padding: 0;
   margin: 0;
-  border: 1px solid #404040;
+  border: 1px solid var(--border);
   border-radius: 16px;
-  background: #2a2a2a;
-  color: #b3b3b3;
+  background: var(--bg-surface);
+  color: var(--text-placeholder);
   cursor: pointer;
   transition: all 0.2s;
   position: relative;
@@ -853,21 +826,26 @@ const handleBulkExport = () => {
 }
 
 .management-filter-button:hover {
-  background: #3a3a3a;
-  color: #ffffff;
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.management-filter-button:focus-visible {
+  outline: none;
+  border-color: var(--accent);
 }
 
 .management-filter-button.active {
-  background: #ec5002ee;
-  color: #ffffff;
-  border-color: #ec5002ee;
+  background: var(--accent);
+  color: var(--text-primary);
+  border-color: var(--accent);
 }
 
 .filter-dropdown {
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
-  z-index: 1000;
+  z-index: var(--z-dropdown);
   width: 200px;
 }
 
@@ -880,16 +858,16 @@ const handleBulkExport = () => {
 
 .selection-counter {
   font-size: 13px;
-  color: #999;
+  color: var(--text-tertiary);
   margin-left: 4px;
 }
 
 .control-button {
   padding: 8px 12px;
-  background: #2a2a2a;
-  border: 1px solid #404040;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
   border-radius: 6px;
-  color: #ffffff;
+  color: var(--text-primary);
   font-size: 13px;
   line-height: 1;
   cursor: pointer;
@@ -901,7 +879,12 @@ const handleBulkExport = () => {
 }
 
 .control-button:hover {
-  background: #3a3a3a;
+  background: var(--bg-hover);
+}
+
+.control-button:focus-visible {
+  outline: none;
+  border-color: var(--accent);
 }
 
 .spacer {
@@ -932,39 +915,49 @@ const handleBulkExport = () => {
 }
 
 .delete-button {
-  background-color: #2a2a2a;
-  border: 1px solid #404040;
-  color: #ffffff;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
 }
 
 .delete-button:hover:not(:disabled) {
-  background-color: #d32f2f;
-  border-color: #d32f2f;
+  background-color: var(--danger);
+  border-color: var(--danger);
+}
+
+.delete-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .delete-button:disabled {
-  background-color: #2a2a2a;
-  border: 1px solid #404040;
-  color: #666;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
   cursor: not-allowed;
   opacity: 0.5;
 }
 
 .export-button {
-  background-color: #2a2a2a;
-  border: 1px solid #404040;
-  color: #ffffff;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
 }
 
 .export-button:hover:not(:disabled) {
-  background-color: #ec5002ee;
-  border-color: #ec5002ee;
+  background-color: var(--accent);
+  border-color: var(--accent);
+}
+
+.export-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .export-button:disabled {
-  background-color: #2a2a2a;
-  border: 1px solid #404040;
-  color: #666;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
   cursor: not-allowed;
   opacity: 0.5;
 }
@@ -998,26 +991,31 @@ const handleBulkExport = () => {
 
 .coming-soon-title {
   margin: 0 0 12px 0;
-  color: #ffffff;
+  color: var(--text-primary);
   font-size: 24px;
   font-weight: 600;
 }
 
 .coming-soon-text {
   margin: 0;
-  color: #999;
+  color: var(--text-tertiary);
   font-size: 16px;
 }
 
 /* Import Button */
 .import-button {
-  background-color: #2a2a2a;
-  border: 1px solid #404040;
-  color: #ffffff;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
 }
 
 .import-button:hover {
-  background-color: #ec5002ee;
-  border-color: #ec5002ee;
+  background-color: var(--accent);
+  border-color: var(--accent);
+}
+
+.import-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--accent);
 }
 </style>

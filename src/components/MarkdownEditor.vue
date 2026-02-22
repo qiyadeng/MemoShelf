@@ -64,6 +64,7 @@ import { EditorView, basicSetup } from 'codemirror'
 import { EditorState } from '@codemirror/state'
 import { markdown } from '@codemirror/lang-markdown'
 import { Bold, Italic, Link, Image, List, ListOrdered } from 'lucide-vue-next'
+import { theme } from '../utils/theme'
 
 interface Props {
   modelValue: string
@@ -142,32 +143,32 @@ onMounted(() => {
       EditorView.theme({
         '&': {
           fontSize: '14px',
-          backgroundColor: '#1a1a1a',
-          color: '#ffffff'
+          backgroundColor: theme.bgInput,
+          color: theme.textPrimary
         },
         '.cm-content': {
-          caretColor: '#ec5002ee',
+          caretColor: theme.accent,
           fontFamily: 'Monaco, Menlo, "Ubuntu Mono", Consolas, monospace'
         },
         '.cm-cursor': {
-          borderLeftColor: '#ec5002ee'
+          borderLeftColor: theme.accent
         },
         '.cm-selectionBackground, ::selection': {
-          backgroundColor: '#3a3a3a !important'
+          backgroundColor: `${theme.bgHover} !important`
         },
         '&.cm-focused .cm-selectionBackground, &.cm-focused ::selection': {
-          backgroundColor: '#3a3a3a !important'
+          backgroundColor: `${theme.bgHover} !important`
         },
         '.cm-gutters': {
-          backgroundColor: '#1a1a1a',
-          color: '#666',
+          backgroundColor: theme.bgInput,
+          color: theme.textMuted,
           border: 'none'
         },
         '.cm-activeLineGutter': {
-          backgroundColor: '#2a2a2a'
+          backgroundColor: theme.bgSurface
         },
         '.cm-activeLine': {
-          backgroundColor: '#2a2a2a'
+          backgroundColor: theme.bgSurface
         }
       })
     ]
@@ -199,10 +200,10 @@ onUnmounted(() => {
 
 <style scoped>
 .markdown-editor {
-  border: 1px solid #404040;
+  border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
-  background-color: #1a1a1a;
+  background-color: var(--bg-input);
 }
 
 .toolbar {
@@ -210,17 +211,17 @@ onUnmounted(() => {
   align-items: center;
   gap: 4px;
   padding: 8px;
-  background-color: #2a2a2a;
-  border-bottom: 1px solid #404040;
+  background-color: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
 }
 
 .toolbar-btn {
   background: none;
-  border: 1px solid #404040;
+  border: 1px solid var(--border);
   border-radius: 4px;
   padding: 6px 10px;
-  color: #b3b3b3;
+  color: var(--text-placeholder);
   cursor: pointer;
   font-size: 13px;
   transition: all 0.2s;
@@ -230,21 +231,26 @@ onUnmounted(() => {
 }
 
 .toolbar-btn:hover {
-  background-color: #3a3a3a;
-  color: #ffffff;
-  border-color: #ec5002ee;
+  background-color: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+.toolbar-btn:focus-visible {
+  outline: none;
+  border-color: var(--accent);
 }
 
 .toolbar-btn.is-active {
-  background-color: #ec5002ee;
-  color: #ffffff;
-  border-color: #ec5002ee;
+  background-color: var(--accent);
+  color: var(--text-primary);
+  border-color: var(--accent);
 }
 
 .divider {
   width: 1px;
   height: 24px;
-  background-color: #404040;
+  background-color: var(--border);
   margin: 0 4px;
 }
 

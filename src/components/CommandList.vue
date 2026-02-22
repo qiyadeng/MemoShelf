@@ -79,8 +79,8 @@ const isSelected = (id: number): boolean => {
 
 <style scoped>
 .command-list {
-  background: #2d2d2d;
-  border: 1px solid #404040;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
   display: flex;
@@ -100,7 +100,7 @@ const isSelected = (id: number): boolean => {
   padding: 12px 16px;
   cursor: pointer;
   transition: all 0.2s;
-  border-bottom: 1px solid #404040;
+  border-bottom: 1px solid var(--border);
 }
 
 .command-list-item:last-child {
@@ -108,11 +108,11 @@ const isSelected = (id: number): boolean => {
 }
 
 .command-list-item:hover {
-  background: #3a3a3a;
+  background: var(--bg-hover);
 }
 
 .command-list-item.selected {
-  background: rgba(236, 80, 2, 0.15);
+  background: var(--accent-glow);
 }
 
 .checkbox-container {
@@ -126,7 +126,12 @@ const isSelected = (id: number): boolean => {
   width: 16px;
   height: 16px;
   cursor: pointer;
-  accent-color: #ec5002ee;
+  accent-color: var(--accent);
+}
+
+.command-checkbox:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .command-details {
@@ -137,7 +142,7 @@ const isSelected = (id: number): boolean => {
 .command-title {
   font-size: 14px;
   font-weight: 500;
-  color: #ffffff;
+  color: var(--text-primary);
   margin-bottom: 4px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -146,7 +151,7 @@ const isSelected = (id: number): boolean => {
 
 .command-description {
   font-size: 13px;
-  color: #cccccc;
+  color: var(--text-secondary);
   margin-bottom: 6px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -157,7 +162,7 @@ const isSelected = (id: number): boolean => {
   display: flex;
   gap: 12px;
   font-size: 12px;
-  color: #999;
+  color: var(--text-tertiary);
 }
 
 .command-language {
@@ -173,7 +178,7 @@ const isSelected = (id: number): boolean => {
 .empty-state {
   padding: 40px 20px;
   text-align: center;
-  color: #999;
+  color: var(--text-tertiary);
   font-size: 14px;
 }
 </style>

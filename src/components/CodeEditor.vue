@@ -13,6 +13,7 @@ import { css } from '@codemirror/lang-css'
 import { json } from '@codemirror/lang-json'
 import { yaml } from '@codemirror/lang-yaml'
 import { markdown } from '@codemirror/lang-markdown'
+import { theme } from '../utils/theme'
 
 interface Props {
   modelValue: string
@@ -68,32 +69,32 @@ onMounted(() => {
     EditorView.theme({
       '&': {
         fontSize: '14px',
-        backgroundColor: '#1a1a1a',
-        color: '#ffffff'
+        backgroundColor: theme.bgInput,
+        color: theme.textPrimary
       },
       '.cm-content': {
-        caretColor: '#ec5002ee',
+        caretColor: theme.accent,
         fontFamily: 'Monaco, Menlo, "Ubuntu Mono", Consolas, monospace'
       },
       '.cm-cursor': {
-        borderLeftColor: '#ec5002ee'
+        borderLeftColor: theme.accent
       },
       '.cm-selectionBackground, ::selection': {
-        backgroundColor: '#3a3a3a !important'
+        backgroundColor: `${theme.bgHover} !important`
       },
       '&.cm-focused .cm-selectionBackground, &.cm-focused ::selection': {
-        backgroundColor: '#3a3a3a !important'
+        backgroundColor: `${theme.bgHover} !important`
       },
       '.cm-gutters': {
-        backgroundColor: '#1a1a1a',
-        color: '#666',
+        backgroundColor: theme.bgInput,
+        color: theme.textMuted,
         border: 'none'
       },
       '.cm-activeLineGutter': {
-        backgroundColor: '#2a2a2a'
+        backgroundColor: theme.bgSurface
       },
       '.cm-activeLine': {
-        backgroundColor: '#2a2a2a'
+        backgroundColor: theme.bgSurface
       }
     }),
     // Use compartment for dynamic language switching
@@ -142,7 +143,7 @@ onUnmounted(() => {
 
 <style scoped>
 .code-editor {
-  border: 1px solid #404040;
+  border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
   min-height: 200px;
@@ -161,8 +162,8 @@ onUnmounted(() => {
 <style>
 /* Global autocomplete styles - using higher specificity */
 .cm-tooltip.cm-tooltip-autocomplete {
-  background-color: #2a2a2a !important;
-  border: 1px solid #404040 !important;
+  background-color: var(--bg-surface) !important;
+  border: 1px solid var(--border) !important;
   border-radius: 4px !important;
 }
 
@@ -172,14 +173,14 @@ onUnmounted(() => {
 }
 
 .cm-tooltip-autocomplete ul li {
-  color: #e3e3e3 !important;
+  color: var(--text-secondary) !important;
   padding: 4px 8px !important;
   background-color: transparent !important;
 }
 
 .cm-tooltip-autocomplete ul li[aria-selected] {
-  background-color: #3a3a3a !important;
-  color: #ffffff !important;
+  background-color: var(--bg-hover) !important;
+  color: var(--text-primary) !important;
 }
 
 .cm-completionIcon {
@@ -187,16 +188,16 @@ onUnmounted(() => {
 }
 
 .cm-completionLabel {
-  color: #e3e3e3 !important;
+  color: var(--text-secondary) !important;
 }
 
 .cm-completionDetail {
-  color: #999 !important;
+  color: var(--text-tertiary) !important;
   font-style: italic !important;
 }
 
 .cm-completionMatchedText {
-  color: #ec5002ee !important;
+  color: var(--accent) !important;
   font-weight: bold !important;
   text-decoration: none !important;
 }

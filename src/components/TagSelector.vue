@@ -79,10 +79,10 @@ const isSelected = (tag: string): boolean => {
 
 <style scoped>
 .tag-selector {
-  background: #2d2d2d;
-  border: 1px solid #404040;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 12px var(--shadow);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -94,10 +94,10 @@ const isSelected = (tag: string): boolean => {
   justify-content: space-between;
   align-items: center;
   padding: 12px 16px;
-  border-bottom: 1px solid #404040;
+  border-bottom: 1px solid var(--border);
   font-size: 14px;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--text-primary);
   flex-shrink: 0;
 }
 
@@ -108,39 +108,44 @@ const isSelected = (tag: string): boolean => {
   font-weight: 500;
   cursor: pointer;
   border: none;
-  background: #404040;
-  color: #ffffff;
+  background: var(--border);
+  color: var(--text-primary);
   transition: all 0.2s;
 }
 
 .clear-all-btn:hover {
-  background: #505050;
+  background: var(--border-hover);
+}
+
+.clear-all-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .tag-search {
   padding: 8px 12px;
-  border-bottom: 1px solid #404040;
+  border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 
 .tag-search-input {
   width: 100%;
   padding: 6px 10px;
-  border: 1px solid #404040;
+  border: 1px solid var(--border);
   border-radius: 4px;
-  background: #1e1e1e;
-  color: #e3e3e3;
+  background: var(--bg-deep);
+  color: var(--text-secondary);
   font-size: 13px;
   outline: none;
   box-sizing: border-box;
 }
 
 .tag-search-input:focus {
-  border-color: #ec5002ee;
+  border-color: var(--accent);
 }
 
 .tag-search-input::placeholder {
-  color: #888;
+  color: var(--text-tertiary);
 }
 
 .tag-list {
@@ -157,16 +162,16 @@ const isSelected = (tag: string): boolean => {
   cursor: pointer;
   transition: all 0.2s;
   font-size: 14px;
-  color: #e3e3e3;
+  color: var(--text-secondary);
 }
 
 .tag-item:hover {
-  background: #3a3a3a;
+  background: var(--bg-hover);
 }
 
 .tag-item.selected {
-  background: #ec5002ee;
-  color: #ffffff;
+  background: var(--accent);
+  color: var(--text-primary);
 }
 
 .tag-name {
@@ -174,7 +179,7 @@ const isSelected = (tag: string): boolean => {
 }
 
 .checkmark {
-  color: #ffffff;
+  color: var(--text-primary);
   font-weight: bold;
   margin-left: 8px;
 }
@@ -182,7 +187,7 @@ const isSelected = (tag: string): boolean => {
 .empty-state {
   padding: 40px 20px;
   text-align: center;
-  color: #999;
+  color: var(--text-tertiary);
   font-size: 14px;
 }
 </style>
