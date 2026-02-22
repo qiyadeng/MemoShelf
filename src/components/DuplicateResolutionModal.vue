@@ -61,23 +61,23 @@ const handleChoice = (choice: 'skip' | 'replace') => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.75);
+  background: var(--overlay);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 10000;
+  z-index: var(--z-modal-top);
   padding: 20px;
   -webkit-app-region: no-drag;
 }
 
 .modal-content {
-  background: #1e1e1e;
+  background: var(--bg-deep);
   border-radius: 12px;
   max-width: 500px;
   width: 100%;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 8px 32px var(--shadow);
 }
 
 .modal-header {
@@ -85,12 +85,12 @@ const handleChoice = (choice: 'skip' | 'replace') => {
   justify-content: space-between;
   align-items: center;
   padding: 20px 24px;
-  border-bottom: 1px solid #404040;
+  border-bottom: 1px solid var(--border);
 }
 
 .modal-header h2 {
   margin: 0;
-  color: #ffffff;
+  color: var(--text-primary);
   font-size: 18px;
   font-weight: 600;
 }
@@ -98,7 +98,7 @@ const handleChoice = (choice: 'skip' | 'replace') => {
 .close-button {
   background: none;
   border: none;
-  color: #999;
+  color: var(--text-tertiary);
   font-size: 24px;
   cursor: pointer;
   padding: 0;
@@ -111,8 +111,13 @@ const handleChoice = (choice: 'skip' | 'replace') => {
 }
 
 .close-button:hover {
-  background: #404040;
-  color: #ffffff;
+  background: var(--border);
+  color: var(--text-primary);
+}
+
+.close-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .modal-body {
@@ -127,18 +132,18 @@ const handleChoice = (choice: 'skip' | 'replace') => {
 
 .info-text {
   margin: 0 0 12px 0;
-  color: #ffffff;
+  color: var(--text-primary);
   font-size: 16px;
   line-height: 1.5;
 }
 
 .info-text strong {
-  color: #ec5002ee;
+  color: var(--accent);
 }
 
 .sub-text {
   margin: 0;
-  color: #999;
+  color: var(--text-tertiary);
   font-size: 14px;
 }
 
@@ -146,7 +151,7 @@ const handleChoice = (choice: 'skip' | 'replace') => {
   display: flex;
   gap: 12px;
   padding: 20px 24px;
-  border-top: 1px solid #404040;
+  border-top: 1px solid var(--border);
 }
 
 .spacer {
@@ -155,10 +160,10 @@ const handleChoice = (choice: 'skip' | 'replace') => {
 
 .cancel-button {
   padding: 10px 20px;
-  background: #2a2a2a;
-  border: 1px solid #404040;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
   border-radius: 6px;
-  color: #ffffff;
+  color: var(--text-primary);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
@@ -166,15 +171,20 @@ const handleChoice = (choice: 'skip' | 'replace') => {
 }
 
 .cancel-button:hover {
-  background: #3a3a3a;
+  background: var(--bg-hover);
+}
+
+.cancel-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .choice-button {
   padding: 12px 24px;
-  background: #2a2a2a;
-  border: 1px solid #404040;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
   border-radius: 6px;
-  color: #ffffff;
+  color: var(--text-primary);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
@@ -182,18 +192,23 @@ const handleChoice = (choice: 'skip' | 'replace') => {
 }
 
 .choice-button:hover {
-  background: #3a3a3a;
-  border-color: #555;
+  background: var(--bg-hover);
+  border-color: var(--border-hover);
+}
+
+.choice-button:focus-visible {
+  outline: none;
+  border-color: var(--accent);
 }
 
 .choice-button.primary {
-  background: #ec5002ee;
-  border-color: #ec5002ee;
+  background: var(--accent);
+  border-color: var(--accent);
   font-weight: 600;
 }
 
 .choice-button.primary:hover {
-  background: #d4470a;
-  border-color: #d4470a;
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 </style>

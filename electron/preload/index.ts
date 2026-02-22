@@ -1,16 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron"
-
-//define command Type locally
-type Command = {
-  id: number
-  title: string
-  body: string
-  description: string
-  tags: string
-  language: string
-  created_at: string
-  updated_at: string
-}
+import type { Command } from "../../shared/types"
 //expose db methods to renderer process
 contextBridge.exposeInMainWorld('electronAPI', {
   // db methods

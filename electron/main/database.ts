@@ -1,17 +1,9 @@
 import Database from "better-sqlite3";
 import path from "node:path";
 import { app } from "electron";
+import type { Command } from "../../shared/types";
 
-export interface Command {
-    id: number
-    title: string
-    body: string
-    description: string
-    tags: string
-    language: string
-    created_at: string
-    updated_at: string
-}
+export type { Command }
 // Initialize and export the database connection
 let db: Database.Database | null = null;
 export function initializeDatabase() {

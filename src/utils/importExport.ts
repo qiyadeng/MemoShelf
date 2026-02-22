@@ -3,6 +3,7 @@
  */
 
 import { filterCommandsByTags, normalizeTags, tagsToJson } from './tags'
+import type { Command } from '../../shared/types'
 
 // Security limits to prevent DoS attacks
 const MAX_COMMANDS = 50000 // Maximum number of commands in a single import
@@ -44,16 +45,7 @@ export interface ImportCommand {
  * @returns ExportData object ready for JSON serialization
  */
 export function exportCommands(
-  commands: Array<{
-    id: number
-    title: string
-    body: string
-    description: string
-    tags: string
-    language: string
-    created_at: string
-    updated_at: string
-  }>,
+  commands: Command[],
   filterTags: string[] = []
 ): ExportData {
   // Filter commands by tags if specified
@@ -223,30 +215,12 @@ function parseTagsFromCommand(tagsJson: string): string[] {
  */
 export interface DuplicateMatch {
   importCommand: ImportCommand
-  existingCommand: {
-    id: number
-    title: string
-    body: string
-    description: string
-    tags: string
-    language: string
-    created_at: string
-    updated_at: string
-  }
+  existingCommand: Command
 }
 
 export function detectDuplicates(
   commandsToImport: ImportCommand[],
-  existingCommands: Array<{
-    id: number
-    title: string
-    body: string
-    description?: string
-    tags: string
-    language?: string
-    created_at: string
-    updated_at: string
-  }>
+  existingCommands: Command[]
 ): DuplicateMatch[] {
   const duplicates: DuplicateMatch[] = []
 
@@ -265,16 +239,7 @@ export function detectDuplicates(
     if (existing) {
       duplicates.push({
         importCommand: importCmd,
-        existingCommand: {
-          id: existing.id,
-          title: existing.title,
-          body: existing.body,
-          description: existing.description || '',
-          tags: existing.tags,
-          language: existing.language || 'plaintext',
-          created_at: existing.created_at,
-          updated_at: existing.updated_at
-        }
+        existingCommand: existing
       })
     }
   })

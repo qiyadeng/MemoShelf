@@ -18,6 +18,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import helpMarkdown from '../assets/help.md?raw'
 
 // Props
@@ -43,28 +44,28 @@ const markdownContent = computed(() => {
     `**${globalHotkey}**`
   )
 
-  return marked.parse(processedMarkdown, { async: false })
+  return DOMPurify.sanitize(marked.parse(processedMarkdown, { async: false }) as string)
 })
 </script>
 
 <style scoped>
 /* Component-specific styles */
 .markdown-content {
-  color: #cccccc;
+  color: var(--text-secondary);
   line-height: 1.6;
 }
 
 .markdown-content h1 {
-  color: #ffffff;
+  color: var(--text-primary);
   font-size: 20px;
   font-weight: 600;
   margin: 0 0 24px 0;
-  border-bottom: 1px solid #404040;
+  border-bottom: 1px solid var(--border);
   padding-bottom: 12px;
 }
 
 .markdown-content h2 {
-  color: #ffffff;
+  color: var(--text-primary);
   font-size: 16px;
   font-weight: 600;
   margin: 24px 0 12px 0;
@@ -90,13 +91,13 @@ const markdownContent = computed(() => {
 }
 
 .markdown-content strong {
-  background-color: #404040;
-  border: 1px solid #555;
+  background-color: var(--border);
+  border: 1px solid var(--border-hover);
   border-radius: 4px;
   padding: 2px 6px;
   font-size: 12px;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--text-primary);
   min-width: 20px;
   text-align: center;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
@@ -105,11 +106,11 @@ const markdownContent = computed(() => {
 }
 
 .markdown-content code {
-  background-color: #404040;
+  background-color: var(--border);
   padding: 2px 4px;
   border-radius: 3px;
   font-size: 12px;
-  color: #ffffff;
+  color: var(--text-primary);
 }
 
 .markdown-content p {
@@ -124,11 +125,16 @@ const markdownContent = computed(() => {
   cursor: pointer;
   border: none;
   transition: background-color 0.2s;
-  background-color: #ec5002ee;
-  color: #ffffff;
+  background-color: var(--accent);
+  color: var(--text-primary);
 }
 
 .close-button-footer:hover {
-  background-color: #d4470a;
+  background-color: var(--accent-hover);
+}
+
+.close-button-footer:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--accent);
 }
 </style>

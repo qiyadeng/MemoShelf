@@ -261,7 +261,10 @@
     }
   }
 
-  // Calculate position for inline suggestion using cursor coordinates
+  // Cached canvas context for text measurement (no DOM manipulation)
+  let measureCanvas: CanvasRenderingContext2D | null = null
+
+  // Calculate position for inline suggestion using canvas measureText
   const getSuggestionPosition = (): { left: string; top: string } => {
     if (!tagsInputRef.value || !inlineSuggestion.value) {
       return { left: '0px', top: '0px' }
@@ -269,38 +272,27 @@
 
     const input = tagsInputRef.value
 
-    // Use cursor position if available
     if (typeof input.selectionStart === 'number') {
-      // Create a temporary span to measure text width up to cursor
-      const measurer = document.createElement('span')
       const computedStyle = window.getComputedStyle(input)
 
-      measurer.style.cssText = `
-        position: absolute;
-        visibility: hidden;
-        white-space: pre;
-        font: ${computedStyle.font};
-        font-size: ${computedStyle.fontSize};
-        font-family: ${computedStyle.fontFamily};
-        font-weight: ${computedStyle.fontWeight};
-        letter-spacing: ${computedStyle.letterSpacing};
-      `
+      // Lazily create and cache the canvas context
+      if (!measureCanvas) {
+        measureCanvas = document.createElement('canvas').getContext('2d')
+      }
 
-      // Measure text width up to cursor position
-      const textBeforeCursor = input.value.substring(0, input.selectionStart)
-      measurer.textContent = textBeforeCursor
+      if (measureCanvas) {
+        measureCanvas.font = `${computedStyle.fontWeight} ${computedStyle.fontSize} ${computedStyle.fontFamily}`
 
-      document.body.appendChild(measurer)
-      const textWidth = measurer.getBoundingClientRect().width
-      document.body.removeChild(measurer)
+        const textBeforeCursor = input.value.substring(0, input.selectionStart)
+        const textWidth = measureCanvas.measureText(textBeforeCursor).width
 
-      // Get input's padding
-      const paddingLeft = parseInt(computedStyle.paddingLeft) || 12
-      const paddingTop = parseInt(computedStyle.paddingTop) || 12
+        const paddingLeft = parseInt(computedStyle.paddingLeft) || 12
+        const paddingTop = parseInt(computedStyle.paddingTop) || 12
 
-      return {
-        left: `${paddingLeft + textWidth}px`,
-        top: `${paddingTop + 1}px`
+        return {
+          left: `${paddingLeft + textWidth}px`,
+          top: `${paddingTop + 1}px`
+        }
       }
     }
 
@@ -349,11 +341,11 @@
   }
 
   .language-selector {
-    background-color: #1a1a1a;
-    border: 1px solid #404040;
+    background-color: var(--bg-input);
+    border: 1px solid var(--border);
     border-radius: 4px;
     padding: 4px 8px;
-    color: #b3b3b3;
+    color: var(--text-placeholder);
     font-size: 11px;
     cursor: pointer;
     transition: all 0.2s;
@@ -362,113 +354,99 @@
   }
 
   .language-selector:hover {
-    background-color: #2a2a2a;
-    border-color: #ec5002ee;
-    color: #ffffff;
+    background-color: var(--bg-surface);
+    border-color: var(--accent);
+    color: var(--text-primary);
   }
 
-  .language-selector:focus {
+  .language-selector:focus-visible {
     outline: none;
-    border-color: #ec5002ee;
-    color: #ffffff;
+    border-color: var(--accent);
+    color: var(--text-primary);
   }
 
-  .markdown-preview {
-    background-color: #1a1a1a;
-    border: 1px solid #404040;
+  .markdown-content {
+    background-color: var(--bg-input);
+    border: 1px solid var(--border);
     border-radius: 8px;
     padding: 12px;
     min-height: 80px;
-    color: #ffffff;
+    color: var(--text-primary);
     font-size: 14px;
     line-height: 1.6;
   }
 
-  .description-display {
-    cursor: text;
-    transition: border-color 0.2s;
-  }
-
-  .description-display:hover {
-    border-color: #ec5002ee;
-  }
-
-  .description-display:empty::before {
-    content: attr(data-placeholder);
-    color: #666;
-  }
-
-  .markdown-preview :deep(h1),
-  .markdown-preview :deep(h2),
-  .markdown-preview :deep(h3) {
+  .markdown-content :deep(h1),
+  .markdown-content :deep(h2),
+  .markdown-content :deep(h3) {
     margin-top: 16px;
     margin-bottom: 8px;
-    color: #ffffff;
+    color: var(--text-primary);
   }
 
-  .markdown-preview :deep(h1) {
+  .markdown-content :deep(h1) {
     font-size: 1.5em;
   }
 
-  .markdown-preview :deep(h2) {
+  .markdown-content :deep(h2) {
     font-size: 1.3em;
   }
 
-  .markdown-preview :deep(h3) {
+  .markdown-content :deep(h3) {
     font-size: 1.1em;
   }
 
-  .markdown-preview :deep(p) {
+  .markdown-content :deep(p) {
     margin: 8px 0;
   }
 
-  .markdown-preview :deep(a) {
-    color: #ec5002ee;
+  .markdown-content :deep(a) {
+    color: var(--accent);
     text-decoration: underline;
   }
 
-  .markdown-preview :deep(a:hover) {
-    color: #ff6b2e;
+  .markdown-content :deep(a:hover) {
+    color: var(--accent-light);
   }
 
-  .markdown-preview :deep(code) {
-    background-color: #2a2a2a;
+  .markdown-content :deep(code) {
+    background-color: var(--bg-surface);
     padding: 2px 6px;
     border-radius: 4px;
     font-family: 'Courier New', monospace;
     font-size: 0.9em;
   }
 
-  .markdown-preview :deep(pre) {
-    background-color: #2a2a2a;
+  .markdown-content :deep(pre) {
+    background-color: var(--bg-surface);
     padding: 12px;
     border-radius: 4px;
     overflow-x: auto;
   }
 
-  .markdown-preview :deep(pre code) {
+  .markdown-content :deep(pre code) {
     background: none;
     padding: 0;
   }
 
-  .markdown-preview :deep(ul),
-  .markdown-preview :deep(ol) {
+  .markdown-content :deep(ul),
+  .markdown-content :deep(ol) {
     margin: 8px 0;
     padding-left: 24px;
   }
 
-  .markdown-preview :deep(li) {
+  .markdown-content :deep(li) {
     margin: 4px 0;
   }
 
-  .markdown-preview :deep(blockquote) {
-    border-left: 3px solid #ec5002ee;
+  .markdown-content :deep(blockquote) {
+    border-left: 3px solid var(--accent);
     padding-left: 12px;
     margin: 8px 0;
-    color: #b3b3b3;
+    color: var(--text-placeholder);
   }
 
-  .markdown-preview :deep(img) {
+  .markdown-content :deep(img) {
     max-width: 100%;
     height: auto;
     border-radius: 4px;
@@ -483,7 +461,7 @@
   .inline-suggestion {
     position: absolute;
     pointer-events: none;
-    color: #666666;
+    color: var(--text-muted);
     font-size: 14px;
     font-family: inherit;
     white-space: nowrap;
@@ -491,11 +469,11 @@
   }
 
   .plain-textarea {
-    background-color: #1a1a1a;
-    border: 1px solid #404040;
+    background-color: var(--bg-input);
+    border: 1px solid var(--border);
     border-radius: 8px;
     padding: 12px;
-    color: #ffffff;
+    color: var(--text-primary);
     font-size: 14px;
     font-family: Monaco, Menlo, "Ubuntu Mono", Consolas, monospace;
     line-height: 1.6;
@@ -506,7 +484,7 @@
 
   .plain-textarea:focus {
     outline: none;
-    border-color: #ec5002ee;
+    border-color: var(--accent);
   }
   </style>   
                

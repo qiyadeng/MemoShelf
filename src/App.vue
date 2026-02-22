@@ -1,5 +1,4 @@
 <script setup lang="ts">
-console.log('App.vue script is running')
 // Import the ref function from Vue for creating reactive data
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { refDebounced } from '@vueuse/core'
@@ -13,25 +12,15 @@ import DuplicateResolutionModal from './components/DuplicateResolutionModal.vue'
 import { Copy, Edit, Trash2, HelpCircle, Settings, Anvil, CirclePlus } from 'lucide-vue-next'
 import { VList } from 'virtua/vue'
 import { extractVariables, substituteVariables, hasVariables, type VariableValues } from './utils/variables'
-import { exportCommands, importCommands, validateExportData, generateExportFilename, detectDuplicates, type DuplicateMatch } from './utils/importExport'
+import { exportCommands, importCommands, validateExportData, generateExportFilename, detectDuplicates, type DuplicateMatch, type ImportCommand } from './utils/importExport'
 import { fuzzySearchCommands } from './utils/fuzzySearch'
 import { getAllTags } from './utils/tags'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import hljs from 'highlight.js'
+import type { CommandWithTags } from '../shared/types'
 
-type Command = {
-  id: number
-  title: string
-  body: string
-  description: string
-  tags: string
-  tagsArray: string[] // Pre-parsed tags for performance
-  tagsNormalized: string[] // Pre-normalized (lowercase) for filtering
-  language: string
-  created_at: string
-  updated_at: string
-}
+type Command = CommandWithTags
 
 // Platform detection - use the synchronous platform property
 const isWindows = ref(false)
@@ -41,15 +30,14 @@ const isMaximized = ref(false)
 try {
   if (window.electronAPI && window.electronAPI.platform) {
     isWindows.value = window.electronAPI.platform === 'win32'
-    console.log('Platform detected:', window.electronAPI.platform, 'isWindows:', isWindows.value)
-  } else {
-    console.warn('electronAPI not available')
   }
 } catch (error) {
   console.error('Error detecting platform:', error)
 }
 
 // Window control functions
+// Note: (window.electronAPI as any) is needed because vue-tsc can't resolve
+// the 'window' property from the preload's declare global via project references
 const minimizeWindow = async () => {
   if ((window.electronAPI as any)?.window) {
     await (window.electronAPI as any).window.minimize()
@@ -131,7 +119,7 @@ const descriptionModalContent = ref('')
 // Duplicate resolution modal state
 const showDuplicateModal = ref(false)
 const pendingDuplicates = ref<DuplicateMatch[]>([])
-const pendingImportCommands = ref<any[]>([])
+const pendingImportCommands = ref<ImportCommand[]>([])
 
 // Notification state
 const notificationMessage = ref('')
@@ -166,7 +154,6 @@ const loadCommands = async () => {
         tagsNormalized: tagsArray.map((tag: string) => tag.toLowerCase())
       }
     })
-    console.log('Commands loaded from database:', dbCommands.length)
   }catch(error){
     console.error('Error loading commands from database:', error)
   }
@@ -209,10 +196,11 @@ onMounted(() => {
   }
 })
 
-// Cleanup event listeners on unmount
+// Cleanup event listeners and timers on unmount
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeyboard)
   document.removeEventListener('click', outsideClickHandler)
+  if (notificationTimeout) clearTimeout(notificationTimeout)
 })
 // Two-stage filtering: tags first, then fuzzy search
 const filteredCommands = computed(() => {
@@ -256,10 +244,6 @@ const closeFilterDropdown = () => {
   showFilterDropdown.value = false
 }
 
- console.log('✅ Vue setup completed', {
-    searchQuery: searchQuery.value,
-    commandsLength: commands.value.length
-  })
 // Function to copy command body to clipboard
 const copyCommand = async (command: Command) => {
   // Check if the command contains variables
@@ -354,7 +338,6 @@ const copyToClipboard = async (text: string, language: string = 'plaintext') => 
 
     // Write to clipboard with both formats
     await window.electronAPI.clipboard.write({ text: plainText, html })
-    console.log('Command copied to clipboard with format:', language)
     showNotificationToast('Copied to clipboard!')
   } catch (error) {
     console.error('Error copying command to clipboard:', error)
@@ -394,8 +377,6 @@ const handleVariableCancel = () => {
 // Export functionality
 const handleExport = async (filterTags: string[]) => {
   try {
-    console.log('Exporting commands with tags:', filterTags)
-
     // Export commands with filtering
     const exportData = exportCommands(commands.value, filterTags)
     const filename = generateExportFilename(filterTags)
@@ -406,7 +387,6 @@ const handleExport = async (filterTags: string[]) => {
       // Write file
       const writeResult = await window.electronAPI.file.writeFile(result.filePath, JSON.stringify(exportData, null, 2))
       if (writeResult.success) {
-        console.log('Export successful:', result.filePath)
         alert(`Successfully exported ${exportData.total_commands} commands!`)
       } else {
         console.error('Export failed:', writeResult.error)
@@ -420,8 +400,8 @@ const handleExport = async (filterTags: string[]) => {
 }
 
 // Deduplicate commands within import bundle (keep only unique bodies)
-const deduplicateImportBundle = (commands: any[]): any[] => {
-  const seen = new Map<string, any>()
+const deduplicateImportBundle = (commands: ImportCommand[]): ImportCommand[] => {
+  const seen = new Map<string, ImportCommand>()
   const duplicatesFound: string[] = []
 
   commands.forEach(cmd => {
@@ -433,9 +413,7 @@ const deduplicateImportBundle = (commands: any[]): any[] => {
     }
   })
 
-  if (duplicatesFound.length > 0) {
-    console.log(`Removed ${duplicatesFound.length} internal duplicates from import bundle:`, duplicatesFound)
-  }
+  // duplicatesFound tracked for deduplication but no logging needed
 
   return Array.from(seen.values())
 }
@@ -443,8 +421,6 @@ const deduplicateImportBundle = (commands: any[]): any[] => {
 // Import functionality
 const handleImport = async () => {
   try {
-    console.log('Starting import process')
-
     // Show open dialog
     const result = await window.electronAPI.file.openDialog()
     if (result.success && result.filePath) {
@@ -462,10 +438,6 @@ const handleImport = async () => {
         const originalCount = commandsToImport.length
         commandsToImport = deduplicateImportBundle(commandsToImport)
         const internalDuplicatesRemoved = originalCount - commandsToImport.length
-
-        if (internalDuplicatesRemoved > 0) {
-          console.log(`Removed ${internalDuplicatesRemoved} internal duplicate(s) from import bundle`)
-        }
 
         // Detect duplicates with existing library
         const duplicates = detectDuplicates(commandsToImport, commands.value)
@@ -500,8 +472,8 @@ const handleDuplicateResolution = async (actions: ('skip' | 'replace')[]) => {
   })
 
   // Separate import commands into duplicates and new commands
-  const duplicateCommands: any[] = []
-  const newCommands: any[] = []
+  const duplicateCommands: ImportCommand[] = []
+  const newCommands: ImportCommand[] = []
 
   pendingImportCommands.value.forEach(cmd => {
     const normalizedBody = cmd.body.trim()
@@ -514,7 +486,7 @@ const handleDuplicateResolution = async (actions: ('skip' | 'replace')[]) => {
 
   // Process user's choice for each duplicate
   const idsToReplace: number[] = []
-  const duplicatesToImport: any[] = []
+  const duplicatesToImport: ImportCommand[] = []
 
   pendingDuplicates.value.forEach((duplicate, index) => {
     if (actions[index] === 'replace') {
@@ -557,21 +529,11 @@ const handleDuplicateResolution = async (actions: ('skip' | 'replace')[]) => {
 
   const commandsToAdd = [...cleanNewCommands, ...duplicatesToImport]
 
-  console.log('Import resolution:', {
-    totalInBundle: pendingImportCommands.value.length,
-    duplicatesDetected: pendingDuplicates.value.length,
-    newCommands: newCommands.length,
-    duplicatesToReplace: duplicatesToImport.length,
-    duplicatesToKeep: pendingDuplicates.value.length - duplicatesToImport.length,
-    totalToImport: commandsToAdd.length,
-    existingToDelete: idsToReplace.length
-  })
-
   await processImport(commandsToAdd, idsToReplace)
 }
 
 // Process the actual import
-const processImport = async (commandsToAdd: any[], idsToReplace: number[]) => {
+const processImport = async (commandsToAdd: ImportCommand[], idsToReplace: number[]) => {
   try {
     // Delete existing commands if replacing
     if (idsToReplace.length > 0) {
@@ -649,10 +611,7 @@ const handleBulkDelete = async (ids: number[]) => {
     `Are you sure you want to delete ${ids.length} command${ids.length > 1 ? 's' : ''}?\n\nThis action cannot be undone.`
   )
 
-  if (!confirmDelete) {
-    console.log('Bulk deletion cancelled')
-    return
-  }
+  if (!confirmDelete) return
 
   try {
     let successCount = 0
@@ -723,7 +682,6 @@ const handleBulkExport = async (ids: number[]) => {
         JSON.stringify(exportData, null, 2)
       )
       if (writeResult.success) {
-        console.log('Export successful:', result.filePath)
         showNotificationToast(`Exported ${selectedCommands.length} command${selectedCommands.length > 1 ? 's' : ''}`)
       } else {
         console.error('Export failed:', writeResult.error)
@@ -743,15 +701,11 @@ const deleteCommand = async (id: number) => {
   // Confirm deletion
   const confirmDelete = confirm(`Are you sure you want to delete the command: "${selectedCommand.title}"?\n\nThis action 
   cannot be undone.`)
-  if (!confirmDelete){
-    console.log('Command deletion cancelled')
-    return
-  }
+  if (!confirmDelete) return
   // Call the API to delete the command
   try {
     const result = await window.electronAPI.database.deleteCommand(id)
     if (result.success) {
-      console.log('Command deleted successfully')
       showNotificationToast('Command deleted')
       // refresh the command list and clear selection
       await loadCommands()
@@ -783,7 +737,6 @@ const deleteCommand = async (id: number) => {
         const result = await window.electronAPI.database.updateCommand(selectedCommandForEdit.value.id,
   formData)
         if (result.success) {
-          console.log('Command updated successfully')
           showNotificationToast('Command updated')
           await loadCommands()
         } else {
@@ -794,7 +747,6 @@ const deleteCommand = async (id: number) => {
         // Add new command
         const result = await window.electronAPI.database.addCommand(formData)
         if (result.success) {
-          console.log('Command added successfully')
           showNotificationToast('Command added')
           await loadCommands()
         } else {
@@ -1161,6 +1113,33 @@ const openDescriptionModal = (title: string, description: string) => {
 </template>
 
 <style>
+:root {
+  --accent: #ec5002ee;
+  --accent-hover: #d4470a;
+  --accent-light: #ff6b2e;
+  --accent-glow: rgba(236, 80, 2, 0.15);
+  --bg-app: #181818;
+  --bg-input: #1a1a1a;
+  --bg-deep: #1e1e1e;
+  --bg-surface: #2a2a2a;
+  --bg-elevated: #2d2d2d;
+  --bg-hover: #3a3a3a;
+  --border: #404040;
+  --border-hover: #505050;
+  --text-primary: #ffffff;
+  --text-secondary: #cccccc;
+  --text-tertiary: #999999;
+  --text-muted: #666666;
+  --text-placeholder: #b3b3b3;
+  --overlay: rgba(0, 0, 0, 0.7);
+  --shadow: rgba(0, 0, 0, 0.3);
+  --danger: #d32f2f;
+  --z-dropdown: 500;
+  --z-modal: 1000;
+  --z-modal-top: 1100;
+  --z-toast: 2000;
+}
+
 /* Make parent elements pass-through containers */
 html, body, #app {
   height: 100%;
@@ -1184,8 +1163,8 @@ html, body, #app {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: #181818;
-  color: #ffffff;
+  background: var(--bg-app);
+  color: var(--text-primary);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   overflow: hidden;
 }
@@ -1196,7 +1175,7 @@ html, body, #app {
   display: flex;
   align-items: stretch;
   padding: 0;
-  border-bottom: 1px solid #282828;
+  border-bottom: 1px solid var(--bg-surface);
   -webkit-app-region: drag;
 }
 
@@ -1234,12 +1213,12 @@ html, body, #app {
   margin-left: 0;
   font-size: 1.125rem;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--text-primary);
   align-self: left;
 }
 
 .app-icon {
-  color: #ec5002ee;
+  color: var(--accent);
   flex-shrink: 0;
 }
 
@@ -1274,10 +1253,10 @@ html, body, #app {
   height: 36px;
   margin: 2px 0 0 0;
   padding: 0 12px;
-  background: #2a2a2a;
-  border: 1px solid #3e3e3e;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
   border-radius: 18px;
-  color: #ffffff;
+  color: var(--text-primary);
   font-size: 0.875rem;
   outline: none;
   box-sizing: border-box;
@@ -1287,34 +1266,33 @@ html, body, #app {
 .filter-button {
   width: 32px;
   height: 32px;
-  border: none;
   border-radius: 16px;
-  background: #2a2a2a;
-  color: #b3b3b3;
+  background: var(--bg-surface);
+  color: var(--text-placeholder);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.2s;
-  border: 1px solid #3e3e3e;
+  border: 1px solid var(--border);
   -webkit-app-region: no-drag;
   outline: none;
 }
 
 .filter-button:focus-visible,
 .filter-button.open {
-  border-color: #ec5002ee;
+  border-color: var(--accent);
 }
 
 .filter-button:hover {
-  background: #3a3a3a;
-  color: #ffffff;
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .filter-button.active {
-  background: #ec5002ee;
-  color: #ffffff;
-  border-color: #ec5002ee;
+  background: var(--accent);
+  color: var(--text-primary);
+  border-color: var(--accent);
 }
 
 .filter-dropdown {
@@ -1322,102 +1300,19 @@ html, body, #app {
   top: 100%;
   right: -173px;
   background: transparent;
-  z-index: 1000;
+  z-index: var(--z-dropdown);
   margin-top: 4px;
   width: 200px;
 }
 
-.filter-dropdown-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-  border-bottom: 1px solid #404040;
-  font-size: 14px;
-  font-weight: 600;
-  color: #ffffff;
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  color: #999;
-  font-size: 18px;
-  cursor: pointer;
-  padding: 0;
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-}
-
-.close-btn:hover {
-  background: #404040;
-  color: #ffffff;
-}
-
-.filter-suggestions {
-  padding: 8px;
-}
-
-.filter-section {
-  margin-bottom: 16px;
-}
-
-.filter-section:last-child {
-  margin-bottom: 8px;
-}
-
-.filter-section-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: #999;
-  margin-bottom: 8px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.filter-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.filter-option {
-  background: #1a1a1a;
-  border: 1px solid #404040;
-  border-radius: 16px;
-  padding: 6px 12px;
-  color: #ffffff;
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.filter-option:hover:not(:disabled) {
-  background: #ec5002ee;
-  border-color: #ec5002ee;
-}
-
-.filter-option:disabled,
-.filter-option.filter-active {
-  background: #ec5002ee;
-  border-color: #ec5002ee;
-  color: #ffffff;
-  cursor: not-allowed;
-}
-
-
 
 .search-input:focus {
-  border-color: #ec5002ee;
-  background: #333333;
+  border-color: var(--accent);
+  background: var(--bg-surface);
 }
 
 .search-input::placeholder {
-  color: #b3b3b3;
+  color: var(--text-placeholder);
 }
 
 /* Controls section */
@@ -1449,7 +1344,7 @@ html, body, #app {
   border: 1px solid transparent;
   padding: 7px;
   cursor: pointer;
-  color: #ec5002ee;
+  color: var(--accent);
   transition: all 0.2s;
   border-radius: 4px;
   display: flex;
@@ -1464,14 +1359,14 @@ html, body, #app {
 .add-button:focus-visible,
 .help-button:focus-visible,
 .settings-button:focus-visible {
-  border-color: #ec5002ee;
+  border-color: var(--accent);
 }
 
 .add-button:hover,
 .help-button:hover,
 .settings-button:hover {
-  background-color: #2a2a2a;
-  color: #ffffff;
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
 }
 
 /* Window controls (Windows only) */
@@ -1488,7 +1383,7 @@ html, body, #app {
   border: none;
   padding: 8px;
   cursor: pointer;
-  color: #ec5002ee;
+  color: var(--accent);
   transition: all 0.2s;
   border-radius: 4px;
   display: flex;
@@ -1500,8 +1395,8 @@ html, body, #app {
 }
 
 .window-control-btn:hover {
-  background-color: #2a2a2a;
-  color: #ffffff;
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
 }
 
 /* Command list - Virtual scrolling container */
@@ -1517,18 +1412,18 @@ html, body, #app {
   align-items: center;
   padding: 12px 16px;
   margin-bottom: 1px;
-  background: #1a1a1a;
+  background: var(--bg-input);
   border: 2px solid transparent;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .command-item:hover {
-  background-color: #2a2a2a;
+  background-color: var(--bg-surface);
 }
 
 .command-item.selected {
-  border-color: #ec5002ee;
+  border-color: var(--accent);
 }
 
 /* Remove browser focus outline on commands - we use .selected class instead */
@@ -1550,7 +1445,7 @@ html, body, #app {
 }
 
 .command-title {
-  color: #ffffff;
+  color: var(--text-primary);
   font-size: 14px;
   font-weight: 500;
   white-space: nowrap;
@@ -1563,7 +1458,7 @@ html, body, #app {
   border: none;
   padding: 2px;
   cursor: pointer;
-  color: #b3b3b3;
+  color: var(--text-placeholder);
   transition: all 0.2s;
   border-radius: 4px;
   display: flex;
@@ -1573,12 +1468,12 @@ html, body, #app {
 }
 
 .info-icon:hover {
-  color: #ec5002ee;
-  background-color: #2a2a2a;
+  color: var(--accent);
+  background-color: var(--bg-surface);
 }
 
 .command-body {
-  color: #b3b3b3;
+  color: var(--text-placeholder);
   font-size: 12px;
   line-height: 1.4;
   white-space: nowrap;
@@ -1593,7 +1488,7 @@ html, body, #app {
 }
 
 .command-body :deep(code) {
-  background-color: #2a2a2a;
+  background-color: var(--bg-surface);
   padding: 2px 4px;
   border-radius: 3px;
   font-family: 'Courier New', monospace;
@@ -1616,7 +1511,7 @@ html, body, #app {
 }
 
 .command-item.selected .command-body {
-  color: #ffffff;
+  color: var(--text-primary);
 }
 
 /* Command actions */
@@ -1638,7 +1533,7 @@ html, body, #app {
   border: none;
   padding: 6px;
   cursor: pointer;
-  color: #b3b3b3;
+  color: var(--text-placeholder);
   transition: all 0.2s;
   border-radius: 4px;
   display: flex;
@@ -1647,8 +1542,8 @@ html, body, #app {
 }
 
 .command-actions button:hover {
-  background-color: #3e3e3e;
-  color: #ffffff;
+  background-color: var(--border);
+  color: var(--text-primary);
 }
 
 /* Shared modal styles */
@@ -1658,22 +1553,22 @@ html, body, #app {
   left: 0;
   width: 100%;
   height: 100%;
-  background-color: rgba(0, 0, 0, 0.7);
+  background-color: var(--overlay);
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 1000;
+  z-index: var(--z-modal);
   -webkit-app-region: no-drag;
 }
 
 .modal-content {
-  background-color: #2d2d2d;
+  background-color: var(--bg-elevated);
   border-radius: 12px;
   width: 90vw;
   max-width: 600px;
   max-height: 90vh;
-  border: 1px solid #404040;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--border);
+  box-shadow: 0 10px 30px var(--shadow);
   overflow-y: auto;
 }
 
@@ -1682,12 +1577,12 @@ html, body, #app {
   justify-content: space-between;
   align-items: center;
   padding: 20px 24px;
-  border-bottom: 1px solid #404040;
+  border-bottom: 1px solid var(--border);
 }
 
 .modal-header h2 {
   margin: 0;
-  color: #ffffff;
+  color: var(--text-primary);
   font-size: 18px;
   font-weight: 600;
 }
@@ -1695,7 +1590,7 @@ html, body, #app {
 .close-button {
   background: none;
   border: none;
-  color: #999;
+  color: var(--text-tertiary);
   font-size: 24px;
   cursor: pointer;
   padding: 0;
@@ -1708,8 +1603,14 @@ html, body, #app {
 }
 
 .close-button:hover {
-  background-color: #404040;
-  color: #ffffff;
+  background-color: var(--border);
+  color: var(--text-primary);
+}
+
+.close-button:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .modal-body {
@@ -1721,7 +1622,7 @@ html, body, #app {
   justify-content: flex-end;
   gap: 12px;
   padding: 20px 24px;
-  border-top: 1px solid #404040;
+  border-top: 1px solid var(--border);
 }
 
 /* Form elements */
@@ -1732,7 +1633,7 @@ html, body, #app {
 .form-group label {
   display: block;
   margin-bottom: 8px;
-  color: #ffffff;
+  color: var(--text-primary);
   font-weight: 500;
   font-size: 14px;
 }
@@ -1743,10 +1644,10 @@ html, body, #app {
   width: 100%;
   padding: 12px;
   margin: 0;
-  border: 1px solid #404040;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background-color: #1a1a1a;
-  color: #ffffff;
+  background-color: var(--bg-input);
+  color: var(--text-primary);
   font-size: 14px;
   font-family: inherit;
   box-sizing: border-box;
@@ -1757,7 +1658,7 @@ html, body, #app {
 .form-group textarea:focus,
 .form-group select:focus {
   outline: none;
-  border-color: #ec5002ee;
+  border-color: var(--accent);
 }
 
 .form-group textarea {
@@ -1778,21 +1679,31 @@ html, body, #app {
 }
 
 .cancel-button {
-  background-color: #404040;
-  color: #ffffff;
+  background-color: var(--border);
+  color: var(--text-primary);
 }
 
 .cancel-button:hover {
-  background-color: #505050;
+  background-color: var(--border-hover);
+}
+
+.cancel-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .save-button {
-  background-color: #ec5002ee;
-  color: #ffffff;
+  background-color: var(--accent);
+  color: var(--text-primary);
 }
 
 .save-button:hover {
-  background-color: #d64502;
+  background-color: var(--accent-hover);
+}
+
+.save-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 /* Notification Toast */
@@ -1801,15 +1712,15 @@ html, body, #app {
   bottom: 24px;
   left: 50%;
   transform: translateX(-50%);
-  background-color: #2d2d2d;
-  color: #ffffff;
+  background-color: var(--bg-elevated);
+  color: var(--text-primary);
   padding: 12px 24px;
   border-radius: 8px;
-  border: 1px solid #404040;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 12px var(--shadow);
   font-size: 14px;
   font-weight: 500;
-  z-index: 2000;
+  z-index: var(--z-toast);
   pointer-events: none;
 }
 
@@ -1827,5 +1738,105 @@ html, body, #app {
 .toast-leave-to {
   opacity: 0;
   transform: translateX(-50%) translateY(20px);
+}
+
+/* Shared markdown content styles */
+.markdown-content {
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3 {
+  color: var(--text-primary);
+  margin-top: 16px;
+  margin-bottom: 8px;
+}
+
+.markdown-content h1 {
+  font-size: 1.5em;
+}
+
+.markdown-content h2 {
+  font-size: 1.3em;
+}
+
+.markdown-content h3 {
+  font-size: 1.1em;
+}
+
+.markdown-content p {
+  margin: 8px 0;
+}
+
+.markdown-content a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.markdown-content a:hover {
+  color: var(--accent-light);
+}
+
+.markdown-content code {
+  background-color: var(--bg-surface);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.9em;
+}
+
+.markdown-content pre {
+  background-color: var(--bg-surface);
+  padding: 12px;
+  border-radius: 4px;
+  overflow-x: auto;
+}
+
+.markdown-content pre code {
+  background: none;
+  padding: 0;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+
+.markdown-content li {
+  margin: 4px 0;
+}
+
+.markdown-content blockquote {
+  border-left: 3px solid var(--accent);
+  padding-left: 12px;
+  margin: 8px 0;
+  color: var(--text-placeholder);
+}
+
+.markdown-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+  margin: 8px 0;
+}
+
+.markdown-content strong {
+  font-weight: 600;
+}
+
+.markdown-content em {
+  font-style: italic;
+}
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 </style>

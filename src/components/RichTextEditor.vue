@@ -180,6 +180,19 @@ const closeLinkDialog = () => {
   linkUrl.value = ''
 }
 
+// Validate URL to prevent javascript:/data:/vbscript: injection
+const isUrlSafe = (url: string): boolean => {
+  const dangerous = /^\s*(javascript|data|vbscript)\s*:/i
+  if (dangerous.test(url)) return false
+  try {
+    const parsed = new URL(url)
+    return ['http:', 'https:', 'mailto:'].includes(parsed.protocol)
+  } catch {
+    // Partial URLs (e.g. "example.com") throw — allow if not dangerous
+    return true
+  }
+}
+
 const saveLink = () => {
   if (!editor.value) return
 
@@ -188,10 +201,11 @@ const saveLink = () => {
   if (url === '') {
     // Empty URL = remove link
     editor.value.chain().focus().extendMarkRange('link').unsetLink().run()
-  } else {
+  } else if (isUrlSafe(url)) {
     // Set link
     editor.value.chain().focus().extendMarkRange('link').setLink({ href: url }).run()
   }
+  // Blocked URLs silently close the dialog
 
   closeLinkDialog()
 }
@@ -203,10 +217,10 @@ onUnmounted(() => {
 
 <style scoped>
 .rich-text-editor {
-  border: 1px solid #404040;
+  border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
-  background-color: #1a1a1a;
+  background-color: var(--bg-input);
 }
 
 .toolbar {
@@ -214,17 +228,17 @@ onUnmounted(() => {
   align-items: center;
   gap: 4px;
   padding: 8px;
-  background-color: #2a2a2a;
-  border-bottom: 1px solid #404040;
+  background-color: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
 }
 
 .toolbar button {
   background: none;
-  border: 1px solid #404040;
+  border: 1px solid var(--border);
   border-radius: 4px;
   padding: 6px 10px;
-  color: #b3b3b3;
+  color: var(--text-placeholder);
   cursor: pointer;
   font-size: 13px;
   transition: all 0.2s;
@@ -234,21 +248,26 @@ onUnmounted(() => {
 }
 
 .toolbar button:hover {
-  background-color: #3a3a3a;
-  color: #ffffff;
-  border-color: #ec5002ee;
+  background-color: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+.toolbar button:focus-visible {
+  outline: none;
+  border-color: var(--accent);
 }
 
 .toolbar button.is-active {
-  background-color: #ec5002ee;
-  color: #ffffff;
-  border-color: #ec5002ee;
+  background-color: var(--accent);
+  color: var(--text-primary);
+  border-color: var(--accent);
 }
 
 .divider {
   width: 1px;
   height: 24px;
-  background-color: #404040;
+  background-color: var(--border);
   margin: 0 4px;
 }
 
@@ -261,7 +280,7 @@ onUnmounted(() => {
 
 .editor-content :deep(.ProseMirror) {
   outline: none;
-  color: #e3e3e3;
+  color: var(--text-secondary);
   font-size: 15px;
   line-height: 1.7;
   min-height: 180px;
@@ -269,7 +288,7 @@ onUnmounted(() => {
 }
 
 .editor-content :deep(.ProseMirror p.is-editor-empty:first-child::before) {
-  color: #666;
+  color: var(--text-muted);
   content: attr(data-placeholder);
   float: left;
   height: 0;
@@ -279,7 +298,7 @@ onUnmounted(() => {
 .editor-content :deep(.ProseMirror h1),
 .editor-content :deep(.ProseMirror h2),
 .editor-content :deep(.ProseMirror h3) {
-  color: #ffffff;
+  color: var(--text-primary);
   font-weight: 600;
   margin-top: 24px;
   margin-bottom: 12px;
@@ -304,13 +323,13 @@ onUnmounted(() => {
 }
 
 .editor-content :deep(.ProseMirror a) {
-  color: #ec5002ee;
+  color: var(--accent);
   text-decoration: underline;
   cursor: pointer;
 }
 
 .editor-content :deep(.ProseMirror a:hover) {
-  color: #ff6b2e;
+  color: var(--accent-light);
 }
 
 .editor-content :deep(.ProseMirror strong) {
@@ -367,7 +386,7 @@ onUnmounted(() => {
   min-height: 16px;
   margin: 0;
   padding: 0;
-  border: 2px solid #666;
+  border: 2px solid var(--text-muted);
   border-radius: 3px;
   cursor: pointer;
   position: relative;
@@ -376,12 +395,12 @@ onUnmounted(() => {
 }
 
 .editor-content :deep(.ProseMirror ul[data-type="taskList"] li > label > input[type="checkbox"]:hover) {
-  border-color: #b3b3b3;
+  border-color: var(--text-placeholder);
 }
 
 .editor-content :deep(.ProseMirror ul[data-type="taskList"] li > label > input[type="checkbox"]:checked) {
-  background-color: #ec5002ee;
-  border-color: #ec5002ee;
+  background-color: var(--accent);
+  border-color: var(--accent);
 }
 
 .editor-content :deep(.ProseMirror ul[data-type="taskList"] li > label > input[type="checkbox"]:checked::after) {
@@ -391,7 +410,7 @@ onUnmounted(() => {
   top: 0px;
   width: 4px;
   height: 8px;
-  border: solid #ffffff;
+  border: solid var(--text-primary);
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
 }
@@ -418,11 +437,11 @@ onUnmounted(() => {
 }
 
 .editor-content :deep(.ProseMirror pre) {
-  background-color: #1e1e1e;
+  background-color: var(--bg-deep);
   padding: 16px;
   border-radius: 6px;
   overflow-x: auto;
-  border: 1px solid #333;
+  border: 1px solid var(--bg-surface);
 }
 
 .editor-content :deep(.ProseMirror pre code) {
@@ -432,10 +451,10 @@ onUnmounted(() => {
 }
 
 .editor-content :deep(.ProseMirror blockquote) {
-  border-left: 4px solid #555;
+  border-left: 4px solid var(--border-hover);
   padding-left: 16px;
   margin: 16px 0;
-  color: #aaa;
+  color: var(--text-tertiary);
   font-style: italic;
 }
 
@@ -446,25 +465,25 @@ onUnmounted(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.7);
+  background-color: var(--overlay);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: var(--z-modal);
 }
 
 .link-dialog {
-  background-color: #2a2a2a;
-  border: 1px solid #404040;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 24px;
   min-width: 400px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 4px 12px var(--shadow);
 }
 
 .link-dialog h3 {
   margin: 0 0 16px 0;
-  color: #ffffff;
+  color: var(--text-primary);
   font-size: 16px;
   font-weight: 600;
 }
@@ -478,16 +497,16 @@ onUnmounted(() => {
   width: 100%;
   padding: 10px 12px;
   padding-right: 40px; /* Space for X button */
-  background-color: #1a1a1a;
-  border: 1px solid #404040;
+  background-color: var(--bg-input);
+  border: 1px solid var(--border);
   border-radius: 4px;
-  color: #ffffff;
+  color: var(--text-primary);
   font-size: 14px;
 }
 
 .link-input-wrapper input:focus {
   outline: none;
-  border-color: #ec5002ee;
+  border-color: var(--accent);
 }
 
 .clear-btn {
@@ -497,7 +516,7 @@ onUnmounted(() => {
   transform: translateY(-50%);
   background: none;
   border: none;
-  color: #999;
+  color: var(--text-tertiary);
   cursor: pointer;
   padding: 4px;
   display: flex;
@@ -508,8 +527,8 @@ onUnmounted(() => {
 }
 
 .clear-btn:hover {
-  background-color: #404040;
-  color: #ffffff;
+  background-color: var(--border);
+  color: var(--text-primary);
 }
 
 .link-dialog-buttons {
@@ -529,20 +548,30 @@ onUnmounted(() => {
 }
 
 .cancel-btn {
-  background-color: #404040;
-  color: #ffffff;
+  background-color: var(--border);
+  color: var(--text-primary);
 }
 
 .cancel-btn:hover {
-  background-color: #4a4a4a;
+  background-color: var(--border);
+}
+
+.cancel-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .save-btn {
-  background-color: #ec5002ee;
-  color: #ffffff;
+  background-color: var(--accent);
+  color: var(--text-primary);
 }
 
 .save-btn:hover {
-  background-color: #d4470a;
+  background-color: var(--accent-hover);
+}
+
+.save-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--accent);
 }
 </style>
