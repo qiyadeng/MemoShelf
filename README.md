@@ -100,5 +100,20 @@ Subscribe to shared command libraries hosted on GitHub. See [docs/remote-librari
 - [Codebase Map](docs/codebase-map.md) — file reference, architecture, IPC channels
 - [Remote Libraries](docs/remote-libraries.md) — GitHub OAuth setup, repo structure, sync algorithm
 
+## Support
+
+SnipForge is built and maintained independently. Development costs include code signing certificates, hosting, and the many hours that go into building and improving the app.
+
+If you or your company uses SnipForge, please consider sponsoring the project. Sponsorships help keep development active and the project sustainable.
+
+[Sponsor SnipForge on GitHub](https://github.com/sponsors/ArtluxDM)
+
+**For companies**: If your team uses SnipForge, a sponsorship is a small investment that directly supports the tool your people rely on.
+
 ## License
-[MIT](LICENSE)
+
+SnipForge is licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0).
+
+You are free to use, modify, and distribute this software under the terms of the AGPL. Any modifications or derivative works must also be released under the AGPL with full source code.
+
+For commercial licensing inquiries, please reach out via [GitHub](https://github.com/ArtluxDM/SnipForge).
