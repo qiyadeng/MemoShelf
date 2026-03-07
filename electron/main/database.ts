@@ -123,7 +123,8 @@ export function updateCommand(id: number, updates: Partial<Command>): boolean{
     const now = new Date().toISOString();
     const stmt = db.prepare(`
         UPDATE commands
-        SET title = ?, body = ?, description = ?, tags = ?, language = ?, updated_at = ?
+        SET title = ?, body = ?, description = ?, tags = ?, language = ?, updated_at = ?,
+            source = 'local', library_id = NULL, remote_path = NULL
         WHERE id = ?
     `);
     const result = stmt.run(

@@ -4,15 +4,56 @@ Remote Libraries let teams share command snippets via GitHub repositories. A cur
 
 ## How It Works
 
-- **One-way sync**: repo -> app. Curators publish, members consume.
+- **One-way sync**: repo → app. Curators publish, members consume.
 - **Local commands stay private**. Remote commands are tagged with their source and never mix with local ones.
 - **Multi-repo support**. Subscribe to as many libraries as you need (e.g., `k8s-team`, `support-tools`, `dev-builds`).
+- **No merge conflicts**. One JSON file per command means clean git diffs and meaningful history.
+- **Roles mirror GitHub**. Repo owner = curator, write access = contributor, read access = consumer.
 
-## GitHub OAuth Setup
+## Usage
+
+### Subscribing to a Library
+
+1. Open Settings (gear icon) > **Libraries** tab
+2. Click **Sign in with GitHub** (first time only)
+3. Enter the repo in the input field (e.g., `ArtluxDM/k8s-commands` or a full GitHub URL)
+4. Click **Subscribe**
+5. Commands appear in your main list with their source library
+
+### Syncing
+
+- Click the sync icon on an individual library to pull updates
+- Click **Sync All** to update all subscriptions at once
+- Manual sync always does a full diff (re-adds locally deleted commands)
+- Auto-sync uses SHA-based detection to skip repos that haven't changed
+
+### Unsubscribing
+
+Click the X button on a library. All remote commands from that library are removed. Your local commands are never affected.
+
+---
+
+## Developer Reference
+
+### Design Decisions
+
+| Decision | Choice | Why |
+|----------|--------|-----|
+| Backend | GitHub repos | Target audience is engineers, no server to run, roles mirror GitHub permissions |
+| Auth | GitHub OAuth Device Flow | No client_secret in the app, no proxy server, secure — same UX as `gh` CLI |
+| Sync direction | One-way: repo → app | Curators publish, members consume. No merge conflicts ever |
+| Repo structure | One JSON file per command | Clean git diffs, meaningful history, no merge conflicts |
+| Local commands | Always separate, always private | Remote commands tagged with source, never mixed with local |
+| Multi-repo | Yes, subscribe to many | User can pull from k8s-team, support-tools, dev-builds simultaneously |
+| Scanning | Scoped to manifest directory | Monorepo safe — only scans JSON files under the `.snipforge.json` location |
+| Force sync | Manual = full diff, auto = SHA skip | Manual click should always reconcile; auto shouldn't waste API calls |
+| Dependencies | None | Node.js built-in `fetch` (Node 18+), GitHub API is straightforward REST |
+
+### GitHub OAuth Setup
 
 The app uses [GitHub Device Flow](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#device-flow) for authentication — the same flow as `gh auth login`. No client secret is embedded in the app.
 
-### Creating the OAuth App
+**Creating the OAuth App:**
 
 1. Go to [GitHub Developer Settings > OAuth Apps](https://github.com/settings/developers)
 2. Click **New OAuth App**
@@ -26,14 +67,25 @@ The app uses [GitHub Device Flow](https://docs.github.com/en/apps/oauth-apps/bui
 
 The `client_id` is public and safe to embed — no secret is needed for Device Flow.
 
-### Scopes
+**Auth flow:**
 
-The app requests the `repo` scope, which grants read/write access to repositories. This is needed to access private repos. For public-only libraries, `public_repo` would suffice, but `repo` covers both.
+1. User clicks "Sign in with GitHub"
+2. App calls `POST https://github.com/login/device/code` with client_id + scope `repo`
+3. GitHub returns a `user_code` and `verification_uri`
+4. App shows: "Go to github.com/login/device and enter code: ABCD-1234"
+5. Opens browser to the URL automatically
+6. App polls `POST https://github.com/login/oauth/access_token` until user authorizes
+7. Token received → encrypted with `safeStorage` → stored in auth table
 
-## Repo Structure (SnipForge Library)
+**Scopes:** The app requests `repo` (read/write access to repositories). Needed for private repos. For public-only libraries, `public_repo` would suffice, but `repo` covers both.
 
-Any GitHub repo can be a SnipForge library. It needs a `.snipforge.json` manifest and JSON command files anywhere in the same directory (or subdirectories):
+**Token storage:** GitHub tokens are encrypted using Electron's `safeStorage` API before being stored in the local SQLite database (`auth` table). On systems where OS-level encryption isn't available, it falls back to base64 encoding.
 
+### Repo Structure (SnipForge Library)
+
+Any GitHub repo can be a SnipForge library. It needs a `.snipforge.json` manifest. Command JSON files can live anywhere in the same directory or subdirectories — no specific folder structure required.
+
+**Dedicated library repo:**
 ```
 my-team-commands/
 ├── .snipforge.json              # Library manifest (required)
@@ -43,8 +95,7 @@ my-team-commands/
     └── check-node-status.json
 ```
 
-The manifest can also live in a subfolder of a larger repo (monorepo support):
-
+**Subfolder in a monorepo:**
 ```
 my-monorepo/
 ├── src/
@@ -55,8 +106,7 @@ my-monorepo/
 └── package.json                 # Ignored — outside manifest scope
 ```
 
-### Manifest (`.snipforge.json`)
-
+**Manifest** (`.snipforge.json`):
 ```json
 {
   "name": "Cloud Platform K8s Commands",
@@ -65,8 +115,7 @@ my-monorepo/
 }
 ```
 
-### Command File (`get-pods.json`)
-
+**Command file** (`get-pods.json`):
 ```json
 {
   "title": "Get all pods in namespace",
@@ -79,15 +128,11 @@ my-monorepo/
 }
 ```
 
-One file per command means clean git diffs, meaningful history, and no merge conflicts.
+**Validation:** A JSON file is recognized as a command if it has `title` (string) and `body` (string) at the top level. All other fields are optional.
 
-## Architecture
+### Architecture
 
-### Token Storage
-
-GitHub tokens are encrypted using Electron's `safeStorage` API before being stored in the local SQLite database (`auth` table). On systems where OS-level encryption isn't available, it falls back to base64 encoding.
-
-### Database Schema
+#### Database Schema
 
 Two new tables and three new columns on `commands`:
 
@@ -119,7 +164,7 @@ ALTER TABLE commands ADD COLUMN remote_path TEXT;
 - `library_id`: which library a remote command belongs to
 - `remote_path`: filename in the repo (e.g., `get-pods.json`), used to detect updates/deletions
 
-### Sync Algorithm
+#### Sync Algorithm
 
 ```
 1. Fetch repo tree via GitHub API
@@ -138,9 +183,9 @@ ALTER TABLE commands ADD COLUMN remote_path TEXT;
 10. Return SyncResult { added, updated, removed, errors }
 ```
 
-**Force sync**: When a user manually clicks "Sync", the SHA check is bypassed. This ensures locally deleted commands are re-downloaded. Auto-sync (Sync All) still uses SHA optimization.
+**Force sync**: When a user manually clicks "Sync", the SHA check is bypassed (`force: true`). This ensures locally deleted commands are re-downloaded. Auto-sync (Sync All) still uses SHA optimization.
 
-### IPC Channels
+#### IPC Channels
 
 **Auth:**
 | Channel | Purpose |
@@ -155,12 +200,19 @@ ALTER TABLE commands ADD COLUMN remote_path TEXT;
 |---------|---------|
 | `library:subscribe` | Add subscription + initial pull |
 | `library:unsubscribe` | Remove library and its remote commands |
-| `library:sync` | Pull latest for one library |
-| `library:syncAll` | Pull latest for all libraries |
+| `library:sync` | Pull latest for one library (force sync) |
+| `library:syncAll` | Pull latest for all libraries (SHA optimized) |
 | `library:getAll` | List all subscriptions |
 | `library:browse` | Preview library contents without subscribing |
 
-### Key Files
+**Publishing (Phase 3 — not yet implemented):**
+| Channel | Purpose |
+|---------|---------|
+| `library:init` | Initialize repo as SnipForge library |
+| `library:publish` | Push a local command to the repo |
+| `library:unpublish` | Remove a command from the repo |
+
+#### Key Files
 
 | File | Purpose |
 |------|---------|
@@ -171,43 +223,97 @@ ALTER TABLE commands ADD COLUMN remote_path TEXT;
 | `shared/types.ts` | Shared types: Library, RemoteCommand, SyncResult, etc. |
 | `src/components/SettingsModal.vue` | Libraries tab UI |
 
-## Usage
+### Development Workflow
 
-### Subscribing to a Library
+Every issue follows this cycle:
 
-1. Open Settings (gear icon) > **Libraries** tab
-2. Click **Sign in with GitHub** (first time only)
-3. Enter the repo in the input field (e.g., `ArtluxDM/k8s-commands` or a full GitHub URL)
-4. Click **Subscribe**
-5. Commands appear in your main list with their source library
+1. **Doc first** — update the feature doc (`docs/remote-libraries.md`) with the plan before writing code
+2. **Implement** — write the code, referencing the issue number in commits (`ref #N` or `fixes #N`)
+3. **Update docs** — mark deliverables complete, add implementation notes, record any deviations
+4. **Commit** — commit message references the issue; the feature doc is always up to date
 
-### Syncing
+The feature doc is the source of truth — for the plan, the roadmap, and the development log. GitHub Issues track work items and discussion. Together they should make it easy for anyone to pick up an issue, understand what's needed, do the work, and leave everything documented.
 
-- Click the sync icon on an individual library to pull updates
-- Click **Sync All** to update all subscriptions at once
-- SHA-based detection skips repos that haven't changed
+### Phases
 
-### Unsubscribing
+#### Phase 1: Foundation — COMPLETE
 
-Click the X button on a library. All remote commands from that library are removed. Your local commands are never affected.
+Auth + subscribe + pull + sync + unsubscribe. The core flow works end to end.
 
-## Phases
+**Files created/modified:**
+- `electron/main/github.ts` — NEW: GitHub API client (Device Flow auth, repo operations, sync)
+- `electron/main/database.ts` — Added: libraries table, auth table, command source columns, migrations
+- `electron/main/index.ts` — Added: auth + library IPC handlers
+- `electron/preload/index.ts` — Added: auth + library bridge methods
+- `shared/types.ts` — Added: Library, RemoteCommand, SyncResult, AuthStatus types
+- `src/components/SettingsModal.vue` — Replaced "Coming Soon" with Libraries tab (auth + subscriptions)
+- `src/App.vue` — Added: `@libraries-changed` handler
+- `src/utils/fuzzySearch.ts` — Fixed: imports CommandWithTags from shared types (was duplicate interface)
 
-### Phase 1: Foundation (current)
-Auth + subscribe + pull + unsubscribe. The core flow works end to end.
+**Verification:**
+1. Click "Sign in with GitHub" → Device Flow completes → user info shown
+2. Enter a repo URL → subscribe → commands appear in the list
+3. Add a command to the repo manually on GitHub → sync → new command appears
+4. Delete a synced command locally → manual sync → command re-appears
+5. Unsubscribe → remote commands disappear, local commands untouched
+6. Sign out → token cleared, libraries remain (re-auth to sync)
 
-### Phase 2: Library Management UI
-- Visual distinction between local/remote commands in the main list
-- Filter commands by source/library
-- Source indicators on command cards
-- Exclude remote commands from local export
+#### Phase 2: Library Management UI — COMPLETE
 
-### Phase 3: Publishing (Curator Tools)
-- Initialize a GitHub repo as a SnipForge library from the app
+**Deliverables:**
+- [x] Visual distinction between local and remote commands in the main list
+- [x] Source indicators on command cards (library name/badge)
+- [x] Editing a remote command detaches it — becomes local ("you touched it, it's yours now")
+- [ ] Sync body-deduplication — skip remote commands that match an existing local command body (see [#1](https://github.com/ArtluxDM/SnipForge/issues/1))
+- ~~Filter commands by source/library~~ — existing search + tag filters already cover this
+- ~~Exclude remote commands from local export~~ — not needed, exports are from whatever you're working with
+- ~~Protect remote commands from edit/delete~~ — replaced by detach-on-edit philosophy
+
+**Implementation notes:**
+- Detach-on-edit: `database.ts:updateCommand()` now sets `source = 'local'`, `library_id = NULL`, `remote_path = NULL` on every update. Next sync re-adds the remote original as a separate entry.
+
+**Verification:**
+1. Subscribe to 2+ libraries → commands from each show source label
+2. Edit a remote command → it becomes local, next sync re-adds the remote original
+3. Subscribe to a library when you already have matching commands locally → no duplicates created (pending #1)
+
+#### Phase 3: Publishing (Curator Tools)
+
+**Deliverables:**
+- Initialize a new GitHub repo as a SnipForge library from the app
 - Push individual commands to a library repo
 - Remove commands from a library repo
+- Bulk publish selected commands
 
-### Phase 4: Polish
-- Auto-check for updates (badge/notification)
-- Browse library preview before subscribing
+**Verification:**
+1. Init new repo → `.snipforge.json` created
+2. Publish a command → JSON file appears in repo
+3. Another user subscribes → sees the published command
+4. Remove command from repo → syncing user loses it on next pull
+
+#### Phase 4: Unified Library & Export Model
+
+Generalizes the library concept beyond GitHub. Any folder is a library. Export and import align with the library format.
+
+**Local libraries (folder-as-vault):**
+- Open a local folder as a library (like Obsidian "Open Vault")
+- Same format as remote libraries: `.snipforge.json` manifest + individual command JSON files
+- Unifies local folder import with the remote library model
+
+**Export modes (two, not three):**
+- **Library export** — full folder (manifest + individual JSON files), zipped. Works for 1 command or 100.
+- **Bundle export** — single JSON file with selected commands. Quick-share format. A bundle of 1 = single command export (no separate mode needed).
+
+**Unified file format:**
+- `"snipforge": "library"` — manifest file (`.snipforge.json`)
+- `"snipforge": "bundle"` — array of commands in one file
+- `"snipforge": "command"` — individual command file
+
+**Key principle:** Library is the canonical format for organization and sharing. Bundle is the convenience format for quick handoff.
+
+#### Phase 5: Polish
+
+- Auto-check for updates (badge/notification, not auto-pull)
+- "Browse library" preview before subscribing
 - Library search/discovery
+- PR flow for contributors
