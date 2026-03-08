@@ -495,12 +495,12 @@ Key details:
 - Command filenames are slugified from titles (same pattern as publishing: "Get Pods" → `get-pods.json`)
 - If no commands selected, exports all commands
 - The exported zip can be unzipped and opened as a local library (#6) — full round-trip
-- Uses `archiver` npm package for cross-platform zip creation
+- Uses `adm-zip` npm package for cross-platform zip creation (replaced `archiver` which had bundling issues in Electron — its `readable-stream` dependency wasn't included in the asar)
 - All work happens in the main process (temp dir → zip → save dialog → cleanup)
 
 Key changes:
-- `package.json`: add `archiver` + `@types/archiver` dependencies
-- `electron/main/local-library.ts`: new `exportAsLibrary()` — creates temp folder, writes manifest + command JSONs, zips with archiver, returns zip path. New `slugify()` (duplicated from `github.ts` — avoids coupling). Handles duplicate slugs by appending counter (`-2`, `-3`, etc.)
+- `package.json`: add `adm-zip` + `@types/adm-zip` dependencies
+- `electron/main/local-library.ts`: new `exportAsLibrary()` — creates temp folder, writes manifest + command JSONs, zips with adm-zip, returns zip path. New `slugify()` (duplicated from `github.ts` — avoids coupling). Handles duplicate slugs by appending counter (`-2`, `-3`, etc.)
 - `electron/main/index.ts`: `library:exportZip` IPC handler — fetches commands from DB, calls exportAsLibrary, opens save dialog (zip filter), copies to chosen location, cleans up temp dir. When no command IDs specified, defaults to all local commands.
 - `electron/preload/index.ts`: expose `exportZip` channel + type declaration
 - `src/vite-env.d.ts`: added `exportZip` type declaration

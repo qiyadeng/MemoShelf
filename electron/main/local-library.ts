@@ -1,9 +1,8 @@
 import { promises as fs } from 'node:fs'
-import { createWriteStream } from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import crypto from 'node:crypto'
-import archiver from 'archiver'
+import AdmZip from 'adm-zip'
 import * as db from './database'
 import type { Library, LibraryManifest, RemoteCommand, SyncResult } from '../../shared/types'
 
@@ -362,17 +361,9 @@ export async function exportAsLibrary(input: ExportLibraryInput): Promise<string
 
     // Zip the folder
     const zipPath = path.join(tmpDir, `${folderName}.zip`)
-    await new Promise<void>((resolve, reject) => {
-        const output = createWriteStream(zipPath)
-        const archive = archiver('zip', { zlib: { level: 9 } })
-
-        output.on('close', resolve)
-        archive.on('error', reject)
-
-        archive.pipe(output)
-        archive.directory(libraryDir, folderName)
-        archive.finalize()
-    })
+    const zip = new AdmZip()
+    zip.addLocalFolder(libraryDir, folderName)
+    zip.writeZip(zipPath)
 
     // Clean up the unzipped folder (keep only the zip)
     await fs.rm(libraryDir, { recursive: true, force: true })
