@@ -49,7 +49,8 @@ Feature documentation lives in `docs/`. These are living documents — plan, imp
 | Doc | What | Status |
 |-----|------|--------|
 | `docs/schema.md` | Database schema — tables, columns, migrations, TypeScript types | Living reference |
-| `docs/remote-libraries.md` | Remote Libraries — GitHub sync, publishing, unified library model | Phases 1-2 complete, Phase 3 in progress, Phases 4-5 planned |
+| `docs/remote-libraries.md` | Remote Libraries — GitHub sync, publishing, unified library model | Phases 1-4 complete, Phase 5 planned |
+| `docs/settings.md` | Settings — infrastructure, General tab, connectors, auto-sync, shortcuts | Phase 1 planned |
 
 ## Development
 
