@@ -223,10 +223,20 @@
           <!-- Controls Section -->
           <div class="management-controls">
             <div class="controls-row">
-              <!-- Bulk Selection with Filter Button -->
+              <!-- Left: Selection + Filter -->
               <div class="bulk-selection">
+                <input
+                  type="checkbox"
+                  class="select-all-checkbox"
+                  :checked="isAllSelected"
+                  :indeterminate="isIndeterminate"
+                  @change="toggleSelectAll"
+                />
+                <span class="selection-counter" :class="{ muted: selectedCommandIds.length === 0 }">
+                  {{ selectedCommandIds.length }} selected
+                </span>
                 <button @click.stop="toggleManagementFilterDropdown" :class="['management-filter-button', { active: selectedManagementTags.length > 0 }]" title="Filter by tags">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <polygon points="22,3 2,3 10,12.46 10,19 14,21 14,12.46"></polygon>
                   </svg>
                 </button>
@@ -241,44 +251,50 @@
                     @clear-all="clearManagementTags"
                   />
                 </div>
-
-                <button @click="selectAllCommands" class="control-button">Select All</button>
-                <button @click="deselectAllCommands" class="control-button">Deselect All</button>
-                <span v-if="selectedCommandIds.length > 0" class="selection-counter">
-                  {{ selectedCommandIds.length }} selected
-                </span>
               </div>
 
               <div class="spacer"></div>
 
-              <!-- Action Buttons -->
+              <!-- Right: Actions -->
               <div class="action-buttons">
+                <button
+                  @click="handleBulkDelete"
+                  :disabled="selectedCommandIds.length === 0"
+                  class="action-button delete-icon-button"
+                  title="Delete selected"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 6h18"></path>
+                    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                  </svg>
+                </button>
                 <button
                   @click="handleImport"
                   class="action-button import-button"
                 >
                   Import
                 </button>
-                <button
-                  @click="handleBulkDelete"
-                  :disabled="selectedCommandIds.length === 0"
-                  class="action-button delete-button"
-                >
-                  Delete
-                </button>
-                <button
-                  @click="handleBulkExport"
-                  :disabled="selectedCommandIds.length === 0"
-                  class="action-button export-button"
-                >
-                  Export
-                </button>
-                <button
-                  @click="openExportLibraryModal"
-                  class="action-button export-library-button"
-                >
-                  Export as Library
-                </button>
+                <div class="export-dropdown-wrap" @click.stop>
+                  <button
+                    @click="toggleExportDropdown"
+                    :disabled="selectedCommandIds.length === 0"
+                    class="action-button export-button"
+                  >
+                    Export
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="m6 9 6 6 6-6"></path>
+                    </svg>
+                  </button>
+                  <div v-if="showExportDropdown" class="export-dropdown">
+                    <button class="export-dropdown-item" @click="handleExportBundle">
+                      As Bundle (.json)
+                    </button>
+                    <button class="export-dropdown-item" @click="handleExportAsLibrary">
+                      As Library (.zip)
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -987,6 +1003,7 @@ const selectedExportTags = ref<string[]>([])
 const selectedCommandIds = ref<number[]>([])
 const selectedManagementTags = ref<string[]>([])
 const showManagementFilterDropdown = ref(false)
+const showExportDropdown = ref(false)
 
 // Get available tags for autocomplete and dropdown
 const availableTags = computed(() => {
@@ -1246,10 +1263,29 @@ const clearManagementTags = () => {
 const closeAllDropdowns = () => {
   showManagementFilterDropdown.value = false
   showExportFilterDropdown.value = false
+  showExportDropdown.value = false
   locationOpen.value = false
 }
 
 // Bulk selection
+const isAllSelected = computed(() =>
+  filteredManagementCommands.value.length > 0 &&
+  selectedCommandIds.value.length === filteredManagementCommands.value.length
+)
+
+const isIndeterminate = computed(() =>
+  selectedCommandIds.value.length > 0 &&
+  selectedCommandIds.value.length < filteredManagementCommands.value.length
+)
+
+const toggleSelectAll = () => {
+  if (isAllSelected.value) {
+    selectedCommandIds.value = []
+  } else {
+    selectedCommandIds.value = filteredManagementCommands.value.map(cmd => cmd.id)
+  }
+}
+
 const selectAllCommands = () => {
   selectedCommandIds.value = filteredManagementCommands.value.map(cmd => cmd.id)
 }
@@ -1277,6 +1313,21 @@ const handleBulkDelete = () => {
 const handleBulkExport = () => {
   if (selectedCommandIds.value.length === 0) return
   emit('bulk-export', [...selectedCommandIds.value])
+}
+
+// Export dropdown
+const toggleExportDropdown = () => {
+  showExportDropdown.value = !showExportDropdown.value
+}
+
+const handleExportBundle = () => {
+  showExportDropdown.value = false
+  handleBulkExport()
+}
+
+const handleExportAsLibrary = () => {
+  showExportDropdown.value = false
+  openExportLibraryModal()
 }
 </script>
 
@@ -1632,21 +1683,19 @@ const handleBulkExport = () => {
 }
 
 .management-filter-button {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   margin: 0;
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 6px;
   background: var(--bg-surface);
   color: var(--text-placeholder);
   cursor: pointer;
   transition: all 0.2s;
-  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  vertical-align: middle;
 }
 
 .management-filter-button:hover {
@@ -1678,37 +1727,63 @@ const handleBulkExport = () => {
   align-items: center;
   gap: 8px;
   position: relative;
+  padding-left: 17px;
+}
+
+.select-all-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg-surface);
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.select-all-checkbox:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.select-all-checkbox:checked::after {
+  content: '';
+  position: absolute;
+  left: 4.5px;
+  top: 1.5px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--bg-app);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.select-all-checkbox:indeterminate {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.select-all-checkbox:indeterminate::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 6px;
+  width: 7px;
+  height: 0;
+  border: solid var(--bg-app);
+  border-width: 0 0 2px 0;
 }
 
 .selection-counter {
   font-size: 13px;
   color: var(--text-tertiary);
-  margin-left: 4px;
 }
 
-.control-button {
-  padding: 8px 12px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text-primary);
-  font-size: 13px;
-  line-height: 1;
-  cursor: pointer;
-  transition: all 0.2s;
-  height: 32px;
-  box-sizing: border-box;
-  display: inline-flex;
-  align-items: center;
-}
-
-.control-button:hover {
-  background: var(--bg-hover);
-}
-
-.control-button:focus-visible {
-  outline: none;
-  border-color: var(--accent);
+.selection-counter.muted {
+  color: var(--text-placeholder);
 }
 
 .spacer {
@@ -1719,6 +1794,7 @@ const handleBulkExport = () => {
   display: flex;
   gap: 8px;
   flex-shrink: 0;
+  align-items: center;
 }
 
 .action-button {
@@ -1730,36 +1806,42 @@ const handleBulkExport = () => {
   cursor: pointer;
   border: none;
   transition: all 0.2s;
-  min-width: 80px;
   height: 32px;
   box-sizing: border-box;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
 }
 
-.delete-button {
+.delete-icon-button {
   background-color: var(--bg-surface);
   border: 1px solid var(--border);
+  color: var(--text-tertiary);
+  min-width: 32px;
+  width: 32px;
+  padding: 0;
+}
+
+.delete-icon-button:hover:not(:disabled) {
+  background-color: var(--danger);
+  border-color: var(--danger);
   color: var(--text-primary);
 }
 
-.delete-button:hover:not(:disabled) {
-  background-color: var(--danger);
-  border-color: var(--danger);
-}
-
-.delete-button:focus-visible {
+.delete-icon-button:focus-visible {
   outline: none;
   box-shadow: 0 0 0 1px var(--accent);
 }
 
-.delete-button:disabled {
-  background-color: var(--bg-surface);
-  border: 1px solid var(--border);
+.delete-icon-button:disabled {
   color: var(--text-muted);
   cursor: not-allowed;
-  opacity: 0.5;
+  opacity: 0.4;
+}
+
+.export-dropdown-wrap {
+  position: relative;
 }
 
 .export-button {
@@ -1783,23 +1865,41 @@ const handleBulkExport = () => {
   border: 1px solid var(--border);
   color: var(--text-muted);
   cursor: not-allowed;
-  opacity: 0.5;
+  opacity: 0.4;
 }
 
-.export-library-button {
-  background-color: var(--bg-surface);
-  border: 1px solid var(--accent);
-  color: var(--accent);
+.export-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: var(--z-dropdown);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  min-width: 180px;
+  overflow: hidden;
 }
 
-.export-library-button:hover {
-  background-color: var(--accent);
+.export-dropdown-item {
+  display: block;
+  width: 100%;
+  padding: 10px 14px;
+  background: none;
+  border: none;
   color: var(--text-primary);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s;
 }
 
-.export-library-button:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 1px var(--accent);
+.export-dropdown-item:hover {
+  background: var(--bg-hover);
+}
+
+.export-dropdown-item + .export-dropdown-item {
+  border-top: 1px solid var(--border);
 }
 
 .command-list-container {

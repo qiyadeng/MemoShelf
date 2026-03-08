@@ -79,7 +79,7 @@ const isSelected = (id: number): boolean => {
 
 <style scoped>
 .command-list {
-  background: var(--bg-elevated);
+  background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
@@ -123,10 +123,34 @@ const isSelected = (id: number): boolean => {
 }
 
 .command-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
   width: 16px;
   height: 16px;
+  border: 1.5px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg-surface);
   cursor: pointer;
-  accent-color: var(--accent);
+  position: relative;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.command-checkbox:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.command-checkbox:checked::after {
+  content: '';
+  position: absolute;
+  left: 4.5px;
+  top: 1.5px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--bg-app);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
 }
 
 .command-checkbox:focus-visible {
