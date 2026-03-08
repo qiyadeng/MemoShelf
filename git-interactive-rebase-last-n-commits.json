@@ -1,0 +1,13 @@
+{
+  "title": "Git: Interactive rebase last N commits",
+  "body": "git rebase -i HEAD~{{number of commits}}",
+  "description": "Open an interactive rebase to squash, reorder, or edit the last N commits.",
+  "tags": [
+    "git",
+    "rebase",
+    "history"
+  ],
+  "language": "bash",
+  "created_at": "2026-03-08T10:51:52.370Z",
+  "updated_at": "2026-03-08T10:51:52.370Z"
+}
