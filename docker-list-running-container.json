@@ -1,0 +1,13 @@
+{
+  "title": "Docker: List running container",
+  "body": "docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'",
+  "description": "Show all running containers in a clean table format with name, status, and exposed ports.",
+  "tags": [
+    "docker",
+    "containers",
+    "list"
+  ],
+  "language": "bash",
+  "created_at": "2026-03-08T10:49:32.768Z",
+  "updated_at": "2026-03-08T10:49:32.768Z"
+}
