@@ -90,6 +90,14 @@ try {
         );
     `)
 
+    // Library manifest_path migration
+    try {
+        db.exec(`ALTER TABLE libraries ADD COLUMN manifest_path TEXT`)
+        // Backfill: existing libraries with a synced SHA are already initialized
+        db.exec(`UPDATE libraries SET manifest_path = '.snipforge.json' WHERE last_synced_sha IS NOT NULL AND manifest_path IS NULL`)
+        console.log('Added manifest_path column to libraries')
+    } catch { /* already exists */ }
+
     // Index for fast remote command lookups
     db.exec(`CREATE INDEX IF NOT EXISTS idx_commands_library_id ON commands(library_id);`)
     db.exec(`CREATE INDEX IF NOT EXISTS idx_commands_source ON commands(source);`)
@@ -209,13 +217,13 @@ export function getLibraryByRepo(githubRepo: string): Library | undefined {
     return db.prepare("SELECT * FROM libraries WHERE github_repo = ?").get(githubRepo) as Library | undefined
 }
 
-export function addLibrary(githubRepo: string, name: string, description: string): number {
+export function addLibrary(githubRepo: string, name: string, description: string, manifestPath?: string): number {
     if (!db) throw new Error("Database not initialized")
     const now = new Date().toISOString()
     const result = db.prepare(`
-        INSERT INTO libraries (github_repo, name, description, created_at)
-        VALUES (?, ?, ?, ?)
-    `).run(githubRepo, name, description, now)
+        INSERT INTO libraries (github_repo, name, description, manifest_path, created_at)
+        VALUES (?, ?, ?, ?, ?)
+    `).run(githubRepo, name, description, manifestPath ?? null, now)
     return result.lastInsertRowid as number
 }
 
@@ -225,6 +233,20 @@ export function updateLibrarySync(libraryId: number, sha: string): void {
     db.prepare(`
         UPDATE libraries SET last_synced_at = ?, last_synced_sha = ? WHERE id = ?
     `).run(now, sha, libraryId)
+}
+
+export function updateLibraryManifest(libraryId: number, name: string, description: string, manifestPath: string): void {
+    if (!db) throw new Error("Database not initialized")
+    db.prepare(`
+        UPDATE libraries SET name = ?, description = ?, manifest_path = ? WHERE id = ?
+    `).run(name, description, manifestPath, libraryId)
+}
+
+export function clearLibraryManifest(libraryId: number): void {
+    if (!db) throw new Error("Database not initialized")
+    db.prepare(`
+        UPDATE libraries SET manifest_path = NULL, last_synced_sha = NULL WHERE id = ?
+    `).run(libraryId)
 }
 
 export function deleteLibrary(libraryId: number): void {

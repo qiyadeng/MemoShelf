@@ -600,6 +600,32 @@ ipcMain.handle('library:getAll', async () => {
   }
 })
 
+ipcMain.handle('library:init', async (_, libraryId: number, name: string, description: string, subpath?: string) => {
+  if (typeof libraryId !== 'number' || typeof name !== 'string' || !name.trim()) {
+    return { success: false, error: 'Invalid parameters' }
+  }
+  try {
+    const { library, syncResult } = await github.initLibrary(libraryId, name.trim(), (description || '').trim(), subpath)
+    return { success: true, library, syncResult }
+  } catch (error) {
+    console.error('Library init error:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+ipcMain.handle('library:getRepoFolders', async (_, repoUrl: string) => {
+  if (typeof repoUrl !== 'string' || !repoUrl.trim()) {
+    return { success: false, error: 'Invalid repository URL', folders: [] }
+  }
+  try {
+    const folders = await github.getRepoFolders(repoUrl)
+    return { success: true, folders }
+  } catch (error) {
+    console.error('Library getRepoFolders error:', error)
+    return { success: false, error: (error as Error).message, folders: [] }
+  }
+})
+
 ipcMain.handle('library:browse', async (_, repoUrl: string) => {
   if (typeof repoUrl !== 'string' || !repoUrl.trim()) {
     return { success: false, error: 'Invalid repository URL' }

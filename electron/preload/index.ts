@@ -78,6 +78,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('library:getAll'),
     browse: (repoUrl: string): Promise<{ success: boolean; manifest?: any; commands?: any[]; error?: string }> =>
       ipcRenderer.invoke('library:browse', repoUrl),
+    init: (libraryId: number, name: string, description: string, subpath?: string): Promise<{ success: boolean; library?: Library; syncResult?: SyncResult; error?: string }> =>
+      ipcRenderer.invoke('library:init', libraryId, name, description, subpath),
+    getRepoFolders: (repoUrl: string): Promise<{ success: boolean; folders: string[]; error?: string }> =>
+      ipcRenderer.invoke('library:getRepoFolders', repoUrl),
   }
 })
 // tell the compiler what's availible on the window object
@@ -129,6 +133,8 @@ declare global {
         syncAll: () => Promise<{ success: boolean; results?: Array<{ library: Library; result: SyncResult }>; error?: string }>
         getAll: () => Promise<Library[]>
         browse: (repoUrl: string) => Promise<{ success: boolean; manifest?: any; commands?: any[]; error?: string }>
+        init: (libraryId: number, name: string, description: string, subpath?: string) => Promise<{ success: boolean; library?: Library; syncResult?: SyncResult; error?: string }>
+        getRepoFolders: (repoUrl: string) => Promise<{ success: boolean; folders: string[]; error?: string }>
       }
     }
   }

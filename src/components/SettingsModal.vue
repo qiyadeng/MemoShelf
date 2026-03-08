@@ -138,23 +138,38 @@
                 <div class="library-info">
                   <span class="library-name">{{ lib.name }}</span>
                   <span class="library-repo">{{ lib.github_repo }}</span>
-                  <span v-if="lib.last_synced_at" class="library-synced">
+                  <span v-if="!lib.manifest_path" class="library-status not-initialized">
+                    Not initialized
+                  </span>
+                  <span v-else-if="lib.last_synced_at" class="library-synced">
                     Last synced: {{ formatSyncTime(lib.last_synced_at) }}
                   </span>
                 </div>
                 <div class="library-actions">
-                  <button
-                    @click="handleSyncLibrary(lib.id)"
-                    class="library-action-btn"
-                    :disabled="syncing"
-                    title="Sync"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <polyline points="23 4 23 10 17 10"></polyline>
-                      <polyline points="1 20 1 14 7 14"></polyline>
-                      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-                    </svg>
-                  </button>
+                  <template v-if="!lib.manifest_path">
+                    <button
+                      @click="openInitModal(lib)"
+                      class="library-action-btn init"
+                      :disabled="initializing"
+                      title="Initialize as SnipForge library"
+                    >
+                      Init
+                    </button>
+                  </template>
+                  <template v-else>
+                    <button
+                      @click="handleSyncLibrary(lib.id)"
+                      class="library-action-btn"
+                      :disabled="syncing"
+                      title="Sync"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="23 4 23 10 17 10"></polyline>
+                        <polyline points="1 20 1 14 7 14"></polyline>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                      </svg>
+                    </button>
+                  </template>
                   <button
                     @click="handleUnsubscribe(lib.id, lib.name)"
                     class="library-action-btn danger"
@@ -255,6 +270,79 @@
 
       </div>
     </div>
+
+    <!-- Init Library Modal -->
+    <div v-if="initModal.visible" class="init-modal-overlay" @click.self="closeInitModal">
+      <div class="init-modal" @click="locationOpen = false">
+        <h3>Initialize Library</h3>
+        <p class="init-modal-repo">{{ initModal.repo }}</p>
+        <div class="init-modal-field">
+          <label>Name</label>
+          <input
+            v-model="initModal.name"
+            type="text"
+            class="init-modal-input"
+            placeholder="My Team Commands"
+            @keydown.enter="handleInitLibrary"
+          />
+        </div>
+        <div class="init-modal-field">
+          <label>Description</label>
+          <input
+            v-model="initModal.description"
+            type="text"
+            class="init-modal-input"
+            placeholder="Optional description"
+            @keydown.enter="handleInitLibrary"
+          />
+        </div>
+        <div class="init-modal-field">
+          <label>Location <span class="field-hint">(where to create .snipforge.json)</span></label>
+          <div class="location-combobox" @click.stop>
+            <div class="location-input-wrap">
+              <input
+                v-model="initModal.subpath"
+                type="text"
+                class="init-modal-input location-input"
+                placeholder="repository root"
+                @focus="handleLocationFocus"
+              />
+              <button
+                type="button"
+                class="location-chevron-btn"
+                @click="locationOpen = !locationOpen"
+                :disabled="initModal.foldersLoading && initModal.folders.length === 0"
+              >
+                <span class="chevron" :class="{ open: locationOpen }">&#9662;</span>
+              </button>
+            </div>
+            <ul v-if="locationOpen && (initModal.folders.length > 0 || initModal.foldersLoading)" class="location-options">
+              <li
+                v-for="folder in initModal.folders"
+                :key="folder"
+                @click="selectFolder(folder)"
+              >
+                {{ folder }}
+              </li>
+              <li v-if="initModal.foldersLoading" class="loading-item">
+                Loading folders...
+              </li>
+            </ul>
+          </div>
+        </div>
+        <p v-if="initModal.error" class="init-modal-error">{{ initModal.error }}</p>
+        <div class="init-modal-actions">
+          <button @click="closeInitModal" class="init-modal-cancel">Cancel</button>
+          <button
+            @click="handleInitLibrary"
+            class="init-modal-confirm"
+            :disabled="initializing || !initModal.name.trim()"
+          >
+            {{ initializing ? 'Creating...' : 'Create' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -321,6 +409,106 @@ const syncing = ref(false)
 const libraryError = ref('')
 const syncMessage = ref('')
 const syncMessageType = ref<'success' | 'error'>('success')
+
+// ── Init Library State ─────────────────────────────────────────
+const locationOpen = ref(false)
+const locationDropdownRef = ref<HTMLElement>()
+const initializing = ref(false)
+const initModal = ref({
+  visible: false,
+  libraryId: 0,
+  repo: '',
+  name: '',
+  description: '',
+  subpath: '',
+  error: '',
+  folders: [] as string[],
+  foldersLoading: false,
+})
+
+async function openInitModal(lib: Library) {
+  const repoName = lib.github_repo.split('/').pop() || lib.github_repo
+  const prettyName = repoName.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+  initModal.value = {
+    visible: true,
+    libraryId: lib.id,
+    repo: lib.github_repo,
+    name: prettyName,
+    description: '',
+    subpath: '',
+    error: '',
+    folders: [],
+    foldersLoading: true,
+  }
+
+  // Fetch repo folders in the background
+  try {
+    const result = await (window.electronAPI as any).library.getRepoFolders(lib.github_repo)
+    if (result.success) {
+      initModal.value.folders = result.folders
+    }
+  } catch { /* ignore — dropdown just shows root */ }
+  initModal.value.foldersLoading = false
+}
+
+let suppressFocusOpen = false
+
+function selectFolder(folder: string) {
+  initModal.value.subpath = folder
+  locationOpen.value = false
+  // Focus the input so user can keep typing, but suppress the @focus reopening
+  suppressFocusOpen = true
+  nextTick(() => {
+    const input = document.querySelector('.location-input') as HTMLInputElement
+    if (input) {
+      input.focus()
+      input.setSelectionRange(input.value.length, input.value.length)
+    }
+    setTimeout(() => { suppressFocusOpen = false }, 50)
+  })
+}
+
+function handleLocationFocus() {
+  if (!suppressFocusOpen) {
+    locationOpen.value = true
+  }
+}
+
+function closeInitModal() {
+  initModal.value.visible = false
+  initModal.value.error = ''
+  locationOpen.value = false
+}
+
+async function handleInitLibrary() {
+  if (!initModal.value.name.trim() || initializing.value) return
+  initializing.value = true
+  initModal.value.error = ''
+
+  try {
+    const subpath = initModal.value.subpath.trim().replace(/^\/+/, '').replace(/\/+$/, '')
+    const result = await (window.electronAPI as any).library.init(
+      initModal.value.libraryId,
+      initModal.value.name.trim(),
+      initModal.value.description.trim(),
+      subpath || undefined
+    )
+    if (result.success) {
+      closeInitModal()
+      await loadLibraries()
+      syncMessage.value = `Library initialized! ${result.syncResult?.added || 0} commands synced.`
+      syncMessageType.value = 'success'
+      emit('libraries-changed')
+      clearSyncMessage()
+    } else {
+      initModal.value.error = result.error || 'Failed to initialize library'
+    }
+  } catch (e) {
+    initModal.value.error = (e as Error).message
+  } finally {
+    initializing.value = false
+  }
+}
 
 // Load auth status and libraries when modal opens
 watch(() => props.show, async (visible) => {
@@ -463,8 +651,13 @@ async function handleSubscribe() {
     if (result.success) {
       newRepoUrl.value = ''
       await loadLibraries()
+      const lib = result.library
       const sr = result.syncResult
-      syncMessage.value = `Subscribed! Added ${sr?.added || 0} commands.`
+      if (!lib?.manifest_path) {
+        syncMessage.value = `Subscribed to ${lib?.github_repo}. Click Init to set up the library.`
+      } else {
+        syncMessage.value = `Subscribed! Added ${sr?.added || 0} commands.`
+      }
       syncMessageType.value = 'success'
       emit('libraries-changed')
       clearSyncMessage()
@@ -869,6 +1062,7 @@ const clearManagementTags = () => {
 const closeAllDropdowns = () => {
   showManagementFilterDropdown.value = false
   showExportFilterDropdown.value = false
+  locationOpen.value = false
 }
 
 // Bulk selection
@@ -1783,9 +1977,29 @@ const handleBulkExport = () => {
   color: var(--text-primary);
 }
 
+.library-action-btn.init {
+  width: auto;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent, #58a6ff);
+  border-color: var(--accent, #58a6ff);
+}
+
+.library-action-btn.init:hover:not(:disabled) {
+  background: var(--accent, #58a6ff);
+  color: #fff;
+}
+
 .library-action-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.library-status.not-initialized {
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-style: italic;
 }
 
 .empty-libraries {
@@ -1831,5 +2045,208 @@ const handleBulkExport = () => {
 .import-button:focus-visible {
   outline: none;
   box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* Init Library Modal */
+.init-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+}
+
+.init-modal {
+  background: var(--bg-surface, #1e1e1e);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  width: 380px;
+  max-width: 90vw;
+}
+
+.init-modal h3 {
+  margin: 0 0 4px 0;
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.init-modal-repo {
+  margin: 0 0 16px 0;
+  color: var(--text-tertiary);
+  font-size: 13px;
+  font-family: monospace;
+}
+
+.init-modal-field {
+  margin-bottom: 12px;
+}
+
+.init-modal-field label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.field-hint {
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+
+.init-modal-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-input, #2a2a2a);
+  color: var(--text-primary);
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.init-modal-input:focus {
+  outline: none;
+  border-color: var(--accent, #58a6ff);
+}
+
+.location-combobox {
+  position: relative;
+}
+
+.location-input-wrap {
+  display: flex;
+  align-items: stretch;
+}
+
+.location-input-wrap .location-input {
+  flex: 1;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right: none;
+}
+
+.location-input-wrap .location-input::placeholder {
+  font-style: italic;
+  color: var(--text-tertiary);
+}
+
+.location-chevron-btn {
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-top-right-radius: 6px;
+  border-bottom-right-radius: 6px;
+  background: var(--bg-input, #2a2a2a);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.location-chevron-btn:hover {
+  color: var(--text-primary);
+}
+
+.location-chevron-btn:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.location-chevron-btn .chevron {
+  font-size: 10px;
+  transition: transform 0.15s;
+}
+
+.location-chevron-btn .chevron.open {
+  transform: rotate(180deg);
+}
+
+.location-options {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  background: var(--bg-surface, #1e1e1e);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  list-style: none;
+  padding: 4px 0;
+  margin-bottom: 0;
+  max-height: 180px;
+  overflow-y: auto;
+  z-index: 10;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.location-options li {
+  padding: 7px 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.location-options li:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.location-options li.loading-item {
+  color: var(--text-tertiary);
+  font-style: italic;
+  cursor: default;
+}
+
+.init-modal-error {
+  margin: 0 0 12px 0;
+  color: var(--danger, #f85149);
+  font-size: 13px;
+}
+
+.init-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.init-modal-cancel {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.init-modal-cancel:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.init-modal-confirm {
+  padding: 6px 14px;
+  border: 1px solid var(--accent, #58a6ff);
+  border-radius: 6px;
+  background: var(--accent, #58a6ff);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.init-modal-confirm:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.init-modal-confirm:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>

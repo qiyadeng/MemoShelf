@@ -281,16 +281,29 @@ Auth + subscribe + pull + sync + unsubscribe. The core flow works end to end.
 #### Phase 3: Publishing (Curator Tools)
 
 **Deliverables:**
-- Initialize a new GitHub repo as a SnipForge library from the app
+- [x] Initialize a GitHub repo as a SnipForge library from the app
 - Push individual commands to a library repo
 - Remove commands from a library repo
 - Bulk publish selected commands
 
+**Init Library (issue [#2](https://github.com/ArtluxDM/SnipForge/issues/2)):**
+
+Flow: subscribe to any repo → if no `.snipforge.json` found, library card shows "Init" button → click Init → modal asks for name + description + optional subdirectory → pushes manifest via GitHub Contents API → auto-syncs.
+
+Key changes:
+- `Library` type gains `manifest_path` (nullable). Null = not initialized.
+- `subscribeToLibrary()` no longer throws on missing manifest — creates the library record anyway.
+- `parseRepoUrl()` now extracts optional subpath from `owner/repo/path/to/dir` format.
+- New `initLibrary()` function: checks if manifest exists, pushes `.snipforge.json`, updates library record, auto-syncs.
+- UI: library card conditionally shows Init vs Sync based on `manifest_path`.
+- Init modal: small dialog with name (pre-filled from repo name), description, subdirectory (pre-filled from subscribe input if provided).
+
 **Verification:**
-1. Init new repo → `.snipforge.json` created
-2. Publish a command → JSON file appears in repo
-3. Another user subscribes → sees the published command
-4. Remove command from repo → syncing user loses it on next pull
+1. Subscribe to uninitialised repo → library card shows Init button
+2. Click Init → modal → create → `.snipforge.json` appears in repo
+3. Library card updates to show sync controls
+4. Another user subscribes → sees the published command (after commands are added via #3)
+5. Re-init an already-initialized repo → warns/skips
 
 #### Phase 4: Unified Library & Export Model
 

@@ -182,8 +182,9 @@ export function logout(): void {
 
 // ── Repo Operations ───────────────────────────────────────────────
 
-function parseRepoUrl(input: string): { owner: string; repo: string } {
-    // Accept formats: "owner/repo", "https://github.com/owner/repo", etc.
+function parseRepoUrl(input: string): { owner: string; repo: string; subpath?: string } {
+    // Accept formats: "owner/repo", "owner/repo/sub/path",
+    // "https://github.com/owner/repo", "https://github.com/owner/repo/tree/branch/sub/path"
     let cleaned = input.trim()
 
     // Strip trailing .git
@@ -191,16 +192,28 @@ function parseRepoUrl(input: string): { owner: string; repo: string } {
         cleaned = cleaned.slice(0, -4)
     }
 
-    // Full URL
-    const urlMatch = cleaned.match(/github\.com\/([^/]+)\/([^/]+)/)
+    // Strip trailing slashes
+    cleaned = cleaned.replace(/\/+$/, '')
+
+    // Full URL with tree/branch/path
+    const urlTreeMatch = cleaned.match(/github\.com\/([^/]+)\/([^/]+)\/tree\/[^/]+\/(.+)/)
+    if (urlTreeMatch) {
+        return { owner: urlTreeMatch[1], repo: urlTreeMatch[2], subpath: urlTreeMatch[3] }
+    }
+
+    // Full URL (plain)
+    const urlMatch = cleaned.match(/github\.com\/([^/]+)\/([^/]+?)(?:\/|$)/)
     if (urlMatch) {
         return { owner: urlMatch[1], repo: urlMatch[2] }
     }
 
-    // owner/repo format
+    // owner/repo or owner/repo/sub/path format
     const parts = cleaned.split('/')
-    if (parts.length === 2 && parts[0] && parts[1]) {
-        return { owner: parts[0], repo: parts[1] }
+    if (parts.length >= 2 && parts[0] && parts[1]) {
+        const owner = parts[0]
+        const repo = parts[1]
+        const subpath = parts.length > 2 ? parts.slice(2).join('/') : undefined
+        return { owner, repo, subpath }
     }
 
     throw new Error(`Invalid repo format: "${input}". Use "owner/repo" or a GitHub URL.`)
@@ -245,7 +258,7 @@ async function getFileContent(owner: string, repo: string, filePath: string, bra
 
 // ── Library Operations ────────────────────────────────────────────
 
-export async function browseLibrary(repoUrl: string): Promise<{ manifest: LibraryManifest; commands: Array<{ path: string; command: RemoteCommand }> }> {
+export async function browseLibrary(repoUrl: string): Promise<{ manifest: LibraryManifest; manifestPath: string; commands: Array<{ path: string; command: RemoteCommand }> }> {
     const { owner, repo } = parseRepoUrl(repoUrl)
     const branch = await getRepoDefaultBranch(owner, repo)
     const tree = await getRepoTree(owner, repo, branch)
@@ -304,7 +317,7 @@ export async function browseLibrary(repoUrl: string): Promise<{ manifest: Librar
         }
     }
 
-    return { manifest, commands }
+    return { manifest, manifestPath: manifestFile.path, commands }
 }
 
 export async function subscribeToLibrary(repoUrl: string): Promise<{ library: Library; syncResult: SyncResult }> {
@@ -317,45 +330,64 @@ export async function subscribeToLibrary(repoUrl: string): Promise<{ library: Li
         throw new Error(`Already subscribed to ${githubRepo}`)
     }
 
-    // Browse the library to validate it and get commands
-    const { manifest, commands } = await browseLibrary(repoUrl)
+    // Validate the repo exists (will throw if not found / no access)
+    await getRepoDefaultBranch(owner, repo)
 
-    // Get the latest commit SHA for change detection
-    const branch = await getRepoDefaultBranch(owner, repo)
-    const sha = await getLatestCommitSha(owner, repo, branch)
+    // Try to browse — if no manifest, subscribe anyway (user can init later)
+    let browseResult: Awaited<ReturnType<typeof browseLibrary>> | null = null
+    try {
+        browseResult = await browseLibrary(repoUrl)
+    } catch (e) {
+        const msg = (e as Error).message
+        if (!msg.includes('missing .snipforge.json')) throw e
+        // No manifest — that's OK, we'll subscribe without syncing
+    }
 
-    // Create the library record
-    const libraryId = db.addLibrary(githubRepo, manifest.name, manifest.description)
+    if (browseResult) {
+        // Repo has a manifest — full subscribe + sync
+        const { manifest, manifestPath, commands } = browseResult
+        const branch = await getRepoDefaultBranch(owner, repo)
+        const sha = await getLatestCommitSha(owner, repo, branch)
 
-    // Body dedup: skip remote commands whose body already exists locally
-    const localBodies = db.getLocalCommandBodies()
+        const libraryId = db.addLibrary(githubRepo, manifest.name, manifest.description, manifestPath)
 
-    const toAdd = commands
-        .filter(({ command }) => !localBodies.has(command.body.trim()))
-        .map(({ path, command }) => ({
-            remotePath: path,
-            command: {
-                title: command.title,
-                body: command.body,
-                description: command.description || '',
-                tags: JSON.stringify(command.tags || []),
-                language: command.language || 'plaintext',
-                created_at: command.created_at || new Date().toISOString(),
-                updated_at: command.updated_at || new Date().toISOString(),
-            }
-        }))
+        const localBodies = db.getLocalCommandBodies()
+        const toAdd = commands
+            .filter(({ command }) => !localBodies.has(command.body.trim()))
+            .map(({ path, command }) => ({
+                remotePath: path,
+                command: {
+                    title: command.title,
+                    body: command.body,
+                    description: command.description || '',
+                    tags: JSON.stringify(command.tags || []),
+                    language: command.language || 'plaintext',
+                    created_at: command.created_at || new Date().toISOString(),
+                    updated_at: command.updated_at || new Date().toISOString(),
+                }
+            }))
 
-    const syncResult = db.syncRemoteCommands(libraryId, sha, toAdd, [], [])
-
-    // Fetch the created library
-    const library = db.getLibraryByRepo(githubRepo)!
-    return { library, syncResult }
+        const syncResult = db.syncRemoteCommands(libraryId, sha, toAdd, [], [])
+        const library = db.getLibraryByRepo(githubRepo)!
+        return { library, syncResult }
+    } else {
+        // No manifest — create library record as uninitialized
+        const repoName = repo.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+        db.addLibrary(githubRepo, repoName, '')
+        const library = db.getLibraryByRepo(githubRepo)!
+        return { library, syncResult: { added: 0, updated: 0, removed: 0, errors: [] } }
+    }
 }
 
 export async function syncLibrary(libraryId: number, force = false): Promise<SyncResult> {
     const libraries = db.getAllLibraries()
     const library = libraries.find(l => l.id === libraryId)
     if (!library) throw new Error(`Library not found: ${libraryId}`)
+
+    // Skip uninitialized libraries (no manifest)
+    if (!library.manifest_path) {
+        return { added: 0, updated: 0, removed: 0, errors: [] }
+    }
 
     const { owner, repo } = parseRepoUrl(library.github_repo)
     const branch = await getRepoDefaultBranch(owner, repo)
@@ -366,8 +398,19 @@ export async function syncLibrary(libraryId: number, force = false): Promise<Syn
         return { added: 0, updated: 0, removed: 0, errors: [] }
     }
 
-    // Fetch remote commands
-    const { commands: remoteCommands } = await browseLibrary(library.github_repo)
+    // Fetch remote commands — if manifest was deleted, clear manifest_path so UI shows Init
+    let browseResult: Awaited<ReturnType<typeof browseLibrary>>
+    try {
+        browseResult = await browseLibrary(library.github_repo)
+    } catch (e) {
+        const msg = (e as Error).message
+        if (msg.includes('missing .snipforge.json')) {
+            db.clearLibraryManifest(libraryId)
+            return { added: 0, updated: 0, removed: 0, errors: ['Manifest was removed from the repo. Click Init to re-create it.'] }
+        }
+        throw e
+    }
+    const { commands: remoteCommands } = browseResult
 
     // Get current local remote commands for this library
     const localRemote = db.getRemoteCommands(libraryId)
@@ -454,6 +497,78 @@ export async function syncAllLibraries(): Promise<{ results: Array<{ library: Li
 
 export function unsubscribeFromLibrary(libraryId: number): void {
     db.deleteLibrary(libraryId)
+}
+
+export async function initLibrary(libraryId: number, name: string, description: string, subpath?: string): Promise<{ library: Library; syncResult: SyncResult }> {
+    const libraries = db.getAllLibraries()
+    const library = libraries.find(l => l.id === libraryId)
+    if (!library) throw new Error(`Library not found: ${libraryId}`)
+
+    if (library.manifest_path) {
+        throw new Error('This library is already initialized')
+    }
+
+    const { owner, repo } = parseRepoUrl(library.github_repo)
+    const branch = await getRepoDefaultBranch(owner, repo)
+
+    // Build the manifest path (strip leading/trailing slashes)
+    const manifestDir = subpath ? subpath.replace(/^\/+/, '').replace(/\/+$/, '') : ''
+    const manifestPath = manifestDir ? `${manifestDir}/.snipforge.json` : '.snipforge.json'
+
+    // Check if manifest already exists at that path
+    const checkRes = await githubFetch(`/repos/${owner}/${repo}/contents/${manifestPath}?ref=${branch}`)
+    if (checkRes.ok) {
+        throw new Error(`A .snipforge.json already exists at ${manifestPath}`)
+    }
+    if (checkRes.status !== 404) {
+        throw new Error(`Failed to check manifest path: ${checkRes.status}`)
+    }
+
+    // Create the manifest content
+    const manifest: LibraryManifest = {
+        name,
+        description: description || '',
+        format_version: '1.0',
+    }
+    const content = Buffer.from(JSON.stringify(manifest, null, 2) + '\n').toString('base64')
+
+    // Push via GitHub Contents API
+    const putRes = await githubFetch(`/repos/${owner}/${repo}/contents/${manifestPath}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            message: `Initialize SnipForge library`,
+            content,
+            branch,
+        }),
+    })
+
+    if (!putRes.ok) {
+        const err = await putRes.json().catch(() => ({}))
+        throw new Error(`Failed to create manifest: ${(err as any).message || putRes.status}`)
+    }
+
+    // Update library record with manifest info
+    db.updateLibraryManifest(libraryId, name, description, manifestPath)
+
+    // Auto-sync (will find the manifest now)
+    const syncResult = await syncLibrary(libraryId, true)
+
+    const updated = db.getLibraryByRepo(library.github_repo)!
+    return { library: updated, syncResult }
+}
+
+export async function getRepoFolders(repoUrl: string): Promise<string[]> {
+    const { owner, repo } = parseRepoUrl(repoUrl)
+    const branch = await getRepoDefaultBranch(owner, repo)
+    const tree = await getRepoTree(owner, repo, branch)
+
+    const folders = tree
+        .filter(f => f.type === 'tree' && !f.path.includes('node_modules') && !f.path.startsWith('.'))
+        .map(f => f.path)
+        .sort()
+
+    return folders
 }
 
 export function getAllLibraries(): Library[] {
