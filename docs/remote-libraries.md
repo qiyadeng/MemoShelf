@@ -142,6 +142,7 @@ CREATE TABLE libraries (
     github_repo TEXT NOT NULL UNIQUE,   -- "org/repo-name"
     name TEXT NOT NULL,
     description TEXT DEFAULT '',
+    manifest_path TEXT,                 -- path to .snipforge.json in repo (NULL = not initialized)
     last_synced_at TEXT,
     last_synced_sha TEXT,               -- commit SHA for change detection
     created_at TEXT NOT NULL
@@ -169,17 +170,18 @@ ALTER TABLE commands ADD COLUMN remote_path TEXT;
 1. Fetch repo tree via GitHub API
 2. Find .snipforge.json manifest (validate it's a SnipForge library)
 3. Scope scan to the manifest's directory (monorepo safe)
-4. Get latest commit SHA
-5. If SHA matches last sync → skip (unless force sync from manual click)
-6. Fetch all JSON files under the manifest directory, validate each (must have title + body)
-7. Diff against local remote commands for this library:
+4. If stored manifest_path differs from actual location → update it (self-correcting)
+5. Get latest commit SHA
+6. If SHA matches last sync → skip (unless force sync from manual click)
+7. Fetch all JSON files under the manifest directory, validate each (must have title + body)
+8. Diff against local remote commands for this library:
    a. File exists remotely but not locally → ADD
    b. File exists both, remote updated_at > local → UPDATE
    c. File exists locally but not remotely → REMOVE
    d. Unchanged → SKIP
-8. Execute all changes in a single SQLite transaction
-9. Update library.last_synced_at and library.last_synced_sha
-10. Return SyncResult { added, updated, removed, errors }
+9. Execute all changes in a single SQLite transaction
+10. Update library.last_synced_at and library.last_synced_sha
+11. Return SyncResult { added, updated, removed, errors }
 ```
 
 **Force sync**: When a user manually clicks "Sync", the SHA check is bypassed (`force: true`). This ensures locally deleted commands are re-downloaded. Auto-sync (Sync All) still uses SHA optimization.
@@ -282,7 +284,7 @@ Auth + subscribe + pull + sync + unsubscribe. The core flow works end to end.
 **Deliverables:**
 - [x] Initialize a GitHub repo as a SnipForge library from the app
 - [x] Push individual commands to a library repo
-- Remove commands from a library repo
+- [x] Remove commands from a library repo
 - Bulk publish selected commands
 
 **Init Library (issue [#2](https://github.com/ArtluxDM/SnipForge/issues/2)):**
@@ -327,6 +329,28 @@ Key changes:
 2. Publish same command again → updates the file (no duplicate)
 3. Subscribe from another account → sync pulls the published command
 4. Press `p` with a command selected → same publish flow
+
+**Unpublish Command (issue [#4](https://github.com/ArtluxDM/SnipForge/issues/4)):**
+
+Flow: click "Remove from library" button on a remote command card → confirmation prompt → app deletes the JSON file from the repo via GitHub Contents API (DELETE requires the file's blob SHA) → local remote command is removed from DB → subscribers lose the command on next sync (existing REMOVE logic in sync diff handles this).
+
+Key details:
+- Only shown on remote commands where the user has an initialized library (i.e., they're the curator)
+- Uses GitHub Contents API `DELETE /repos/{owner}/{repo}/contents/{path}` with the file's SHA
+- After successful delete, removes the local DB entry for that command
+- Subscribers will lose the command on their next sync because the file no longer exists remotely (sync step 8c: "File exists locally but not remotely → REMOVE")
+
+Key changes:
+- `github.ts`: new `unpublishCommand(libraryId, remotePath)` — fetches file SHA via Contents API, then DELETEs it
+- `index.ts`: `library:unpublish` IPC handler — validates params, calls `unpublishCommand`, then deletes local remote command from DB
+- `preload/index.ts`: expose `library:unpublish` channel + Window type
+- `App.vue`: "Remove from library" button (Trash2 with different styling or X icon) on remote command cards that belong to an initialized library. Confirmation via inline prompt before deleting. Keyboard shortcut: `u` when a remote command is selected.
+
+**Verification:**
+1. Click "Remove from library" on a remote command → file deleted from repo
+2. Local command disappears from the list
+3. Subscribe from another account → sync → command is gone
+4. Try to unpublish a local command → button not shown (correct)
 
 #### Phase 4: Unified Library & Export Model
 

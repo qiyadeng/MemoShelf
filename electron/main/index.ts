@@ -659,6 +659,21 @@ ipcMain.handle('library:publish', async (_, libraryId: number, commandId: number
   }
 })
 
+ipcMain.handle('library:unpublish', async (_, libraryId: number, remotePath: string) => {
+  if (typeof libraryId !== 'number' || typeof remotePath !== 'string' || !remotePath.trim()) {
+    return { success: false, error: 'Invalid parameters' }
+  }
+  try {
+    await github.unpublishCommand(libraryId, remotePath)
+    // Remove the local remote command entry
+    db.deleteRemoteCommand(libraryId, remotePath)
+    return { success: true }
+  } catch (error) {
+    console.error('Library unpublish error:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
 ipcMain.handle('library:browse', async (_, repoUrl: string) => {
   if (typeof repoUrl !== 'string' || !repoUrl.trim()) {
     return { success: false, error: 'Invalid repository URL' }

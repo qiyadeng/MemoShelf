@@ -58,6 +58,7 @@ interface Window {
       init: (libraryId: number, name: string, description: string, subpath?: string) => Promise<{ success: boolean; library?: any; syncResult?: any; error?: string }>
       getRepoFolders: (repoUrl: string) => Promise<{ success: boolean; folders: string[]; error?: string }>
       publish: (libraryId: number, commandId: number) => Promise<{ success: boolean; path?: string; created?: boolean; error?: string }>
+      unpublish: (libraryId: number, remotePath: string) => Promise<{ success: boolean; error?: string }>
     }
   }
 }

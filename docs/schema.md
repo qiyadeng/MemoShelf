@@ -49,6 +49,7 @@ Tracks remote library subscriptions.
 | `github_repo` | TEXT | NOT NULL, UNIQUE | Repo identifier, e.g., `ArtluxDM/k8s-commands` |
 | `name` | TEXT | NOT NULL | Display name from the manifest |
 | `description` | TEXT | `''` | From the manifest |
+| `manifest_path` | TEXT | NULL | Path to `.snipforge.json` in the repo (NULL = not initialized) |
 | `last_synced_at` | TEXT | NULL | ISO 8601 timestamp of last successful sync |
 | `last_synced_sha` | TEXT | NULL | Git commit SHA for change detection (skip sync if unchanged) |
 | `created_at` | TEXT | NOT NULL | ISO 8601 timestamp |
@@ -72,6 +73,7 @@ Migrations are inline in `database.ts:initializeDatabase()`. Each uses a try/cat
 1. `description` column on `commands` (v1 → v2)
 2. `language` column on `commands` (v2 → v3)
 3. `source`, `library_id`, `remote_path` columns on `commands` + `libraries` table + `auth` table (v3 → v4, Phase 1 Remote Libraries)
+4. `manifest_path` column on `libraries` (v4 → v5, Phase 3 Publishing)
 
 When adding new columns, follow the same pattern: `ALTER TABLE ... ADD COLUMN` wrapped in try/catch, placed after the existing migrations in `initializeDatabase()`.
 

@@ -49,14 +49,15 @@ Feature documentation lives in `docs/`. These are living documents — plan, imp
 | Doc | What | Status |
 |-----|------|--------|
 | `docs/schema.md` | Database schema — tables, columns, migrations, TypeScript types | Living reference |
-| `docs/remote-libraries.md` | Remote Libraries — GitHub sync, publishing, unified library model | Phase 2 nearly complete, Phases 3-5 planned |
+| `docs/remote-libraries.md` | Remote Libraries — GitHub sync, publishing, unified library model | Phases 1-2 complete, Phase 3 in progress, Phases 4-5 planned |
 
 ## Development
 
 ```bash
-pnpm install    # install dependencies
-pnpm dev        # starts Electron + Vite dev server
-pnpm build      # production build
+pnpm install      # install dependencies
+pnpm dev          # starts Electron + Vite dev server
+pnpm dev:debug    # starts with Chrome DevTools Protocol on port 9222 (for frontend-dev agent)
+pnpm build        # production build
 ```
 
 ### Guidelines

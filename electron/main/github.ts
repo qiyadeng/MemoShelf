@@ -666,6 +666,43 @@ export async function publishCommand(
     return { path: filePath, created: !existingSha }
 }
 
+export async function unpublishCommand(
+    libraryId: number,
+    remotePath: string
+): Promise<void> {
+    const libraries = db.getAllLibraries()
+    const library = libraries.find(l => l.id === libraryId)
+    if (!library) throw new Error(`Library not found: ${libraryId}`)
+    if (!library.manifest_path) throw new Error('Library is not initialized')
+
+    const { owner, repo } = parseRepoUrl(library.github_repo)
+    const branch = await getRepoDefaultBranch(owner, repo)
+
+    // Get the file's current SHA (required for DELETE)
+    const checkRes = await githubFetch(`/repos/${owner}/${repo}/contents/${remotePath}?ref=${branch}`)
+    if (!checkRes.ok) {
+        if (checkRes.status === 404) throw new Error('File not found in repo — it may have already been removed')
+        throw new Error(`Failed to check file: ${checkRes.status}`)
+    }
+    const fileData = await checkRes.json()
+
+    // Delete via GitHub Contents API
+    const deleteRes = await githubFetch(`/repos/${owner}/${repo}/contents/${remotePath}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            message: `Remove ${remotePath.split('/').pop()?.replace('.json', '') || remotePath}`,
+            sha: fileData.sha,
+            branch,
+        }),
+    })
+
+    if (!deleteRes.ok) {
+        const err = await deleteRes.json().catch(() => ({}))
+        throw new Error(`Failed to delete: ${(err as any).message || deleteRes.status}`)
+    }
+}
+
 export function getAllLibraries(): Library[] {
     return db.getAllLibraries()
 }

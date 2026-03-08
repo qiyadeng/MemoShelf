@@ -9,7 +9,7 @@ import HelpModal from './components/HelpModal.vue'
 import DescriptionModal from './components/DescriptionModal.vue'
 import TagSelector from './components/TagSelector.vue'
 import DuplicateResolutionModal from './components/DuplicateResolutionModal.vue'
-import { Copy, Edit, Trash2, HelpCircle, Settings, Anvil, CirclePlus, Upload } from 'lucide-vue-next'
+import { Copy, Edit, Trash2, HelpCircle, Settings, Anvil, CirclePlus, Upload, CloudOff } from 'lucide-vue-next'
 import { VList } from 'virtua/vue'
 import { extractVariables, substituteVariables, hasVariables, type VariableValues } from './utils/variables'
 import { exportCommands, importCommands, validateExportData, generateExportFilename, detectDuplicates, type DuplicateMatch, type ImportCommand } from './utils/importExport'
@@ -127,6 +127,7 @@ const pendingImportCommands = ref<ImportCommand[]>([])
 const showPublishModal = ref(false)
 const publishTargetCommandId = ref<number | null>(null)
 const publishing = ref(false)
+const unpublishing = ref(false)
 
 // Initialized libraries (can publish to these)
 const initializedLibraries = computed(() => {
@@ -786,6 +787,34 @@ const deleteCommand = async (id: number) => {
     }
   }
 
+  // Unpublish (remove from library repo)
+  const startUnpublish = async (commandId: number) => {
+    const command = commands.value.find(c => c.id === commandId)
+    if (!command || command.source !== 'remote' || !command.library_id || !command.remote_path) return
+
+    const lib = libraries.value.get(command.library_id)
+    if (!lib?.manifest_path) return
+
+    const confirmed = window.confirm(`Remove "${command.title}" from ${lib.name}?\n\nThis deletes the file from the GitHub repo. Subscribers will lose this command on their next sync.`)
+    if (!confirmed) return
+
+    unpublishing.value = true
+    try {
+      const result = await window.electronAPI.library.unpublish(command.library_id, command.remote_path)
+      if (result.success) {
+        showNotificationToast(`Removed from ${lib.name}`)
+        await loadCommands()
+      } else {
+        showNotificationToast(`Unpublish failed: ${result.error}`)
+      }
+    } catch (error) {
+      console.error('Unpublish error:', error)
+      showNotificationToast('Failed to remove from library')
+    } finally {
+      unpublishing.value = false
+    }
+  }
+
   // Handle modal save
   const handleModalSave = async (formData: { title: string; body: string; description: string; tags: string; language: string }) =>
    {
@@ -917,6 +946,12 @@ const handleKeyboard = (event: KeyboardEvent) => {
     const selectedCommand = filteredCommands.value.find(cmd => cmd.id === selectedCommandId.value)
     if (selectedCommand) {
       startPublish(selectedCommand.id)
+    }
+    }else if (event.key === 'u'){
+    event.preventDefault()
+    const selectedCommand = filteredCommands.value.find(cmd => cmd.id === selectedCommandId.value)
+    if (selectedCommand && selectedCommand.source === 'remote') {
+      startUnpublish(selectedCommand.id)
     }
     }else if (event.key === 'Backspace'){
       event.preventDefault()
@@ -1116,13 +1151,23 @@ const openDescriptionModal = (title: string, description: string) => {
                 <Copy :size="16" />
               </button>
               <button
-                v-if="initializedLibraries.length > 0"
+                v-if="initializedLibraries.length > 0 && command.source !== 'remote'"
                 @click.stop="startPublish(command.id)"
                 tabindex="-1"
                 title="Publish to library"
                 :disabled="publishing"
               >
                 <Upload :size="16" />
+              </button>
+              <button
+                v-if="command.source === 'remote' && command.library_id && command.remote_path && libraries.get(command.library_id)?.manifest_path"
+                @click.stop="startUnpublish(command.id)"
+                tabindex="-1"
+                title="Remove from library"
+                :disabled="unpublishing"
+                class="unpublish-btn"
+              >
+                <CloudOff :size="16" />
               </button>
               <button @click.stop="editCommand(command.id)" tabindex="-1" title="Edit command">
                 <Edit :size="16" />
@@ -1657,6 +1702,10 @@ html, body, #app {
 .command-actions button:hover {
   background-color: var(--border);
   color: var(--text-primary);
+}
+
+.command-actions .unpublish-btn:hover {
+  color: #e06c75;
 }
 
 /* Shared modal styles */
