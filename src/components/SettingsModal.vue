@@ -6,8 +6,22 @@
         <div class="tabs">
           <button
             class="tab-button"
-            :class="{ active: activeTab === 'settings' }"
-            @click="activeTab = 'settings'"
+            :class="{ active: activeTab === 'general' }"
+            @click="activeTab = 'general'"
+          >
+            General
+          </button>
+          <button
+            class="tab-button"
+            :class="{ active: activeTab === 'connectors' }"
+            @click="activeTab = 'connectors'"
+          >
+            Connectors
+          </button>
+          <button
+            class="tab-button"
+            :class="{ active: activeTab === 'libraries' }"
+            @click="activeTab = 'libraries'"
           >
             Libraries
           </button>
@@ -24,30 +38,85 @@
 
       <div class="modal-body">
 
-        <!-- Tab 1: Remote Libraries -->
-        <div v-if="activeTab === 'settings'" class="libraries-tab">
-          <!-- GitHub Auth Section -->
+        <!-- Tab 1: General -->
+        <div v-if="activeTab === 'general'" class="general-tab">
           <div class="settings-section">
-            <h3>GitHub Account</h3>
+            <h3>Global Hotkey</h3>
+            <p class="section-description">
+              Keyboard shortcut to show/hide SnipForge from anywhere.
+            </p>
+            <div class="hotkey-picker">
+              <button
+                class="hotkey-display"
+                :class="{ listening: hotkeyListening }"
+                @click="startHotkeyCapture"
+                @keydown="captureHotkey"
+                @blur="cancelHotkeyCapture"
+              >
+                <span v-if="hotkeyListening" class="hotkey-listening-text">
+                  Press a key combo...
+                </span>
+                <span v-else class="hotkey-keys">{{ formatHotkeyDisplay(currentHotkey) }}</span>
+              </button>
+              <span v-if="hotkeyFeedback" class="hotkey-feedback" :class="hotkeyFeedbackType">
+                {{ hotkeyFeedback }}
+              </span>
+            </div>
+          </div>
+        </div>
 
-            <!-- Not authenticated -->
-            <div v-if="!authStatus.authenticated" class="auth-section">
-              <p class="section-description">
-                Sign in with GitHub to subscribe to remote command libraries.
-              </p>
+        <!-- Tab 2: Connectors -->
+        <div v-if="activeTab === 'connectors'" class="connectors-tab">
+          <div class="settings-section" style="border-bottom: none;">
+            <h3>Connected Services</h3>
+            <p class="section-description">
+              External services that SnipForge can sync with.
+            </p>
 
-              <!-- Device Flow: not started -->
-              <div v-if="!deviceFlow.active">
-                <button @click="startLogin" class="github-login-button" :disabled="deviceFlow.loading">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <div class="connector-list">
+              <!-- GitHub Connector -->
+              <div class="connector-row">
+                <div class="connector-icon" :class="{ 'connector-icon--avatar': authStatus.authenticated && authStatus.user?.avatar_url }">
+                  <img
+                    v-if="authStatus.authenticated && authStatus.user?.avatar_url"
+                    :src="authStatus.user.avatar_url"
+                    :alt="authStatus.user.login"
+                    class="connector-avatar"
+                  />
+                  <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
                   </svg>
-                  Sign in with GitHub
-                </button>
+                </div>
+                <div class="connector-info">
+                  <span class="connector-name">GitHub</span>
+                  <span v-if="authStatus.authenticated" class="connector-status connected">
+                    @{{ authStatus.user?.login }}
+                  </span>
+                  <span v-else class="connector-status">Not connected</span>
+                </div>
+                <div class="connector-action">
+                  <!-- Authenticated: disconnect -->
+                  <button
+                    v-if="authStatus.authenticated"
+                    @click="handleLogout"
+                    class="connector-button disconnect"
+                  >
+                    Disconnect
+                  </button>
+                  <!-- Not authenticated: connect flow -->
+                  <button
+                    v-else-if="!deviceFlow.active"
+                    @click="startLogin"
+                    class="connector-button connect"
+                    :disabled="deviceFlow.loading"
+                  >
+                    {{ deviceFlow.loading ? 'Starting...' : 'Connect' }}
+                  </button>
+                </div>
               </div>
 
-              <!-- Device Flow: waiting for user to authorize -->
-              <div v-else-if="deviceFlow.active && !deviceFlow.completed" class="device-flow-prompt">
+              <!-- Device Flow inline (shown when connecting) -->
+              <div v-if="!authStatus.authenticated && deviceFlow.active && !deviceFlow.completed" class="connector-device-flow">
                 <p class="device-flow-instruction">
                   Open the link below and enter this code:
                 </p>
@@ -71,26 +140,13 @@
               </div>
             </div>
 
-            <!-- Authenticated -->
-            <div v-else class="auth-user-info">
-              <div class="user-profile">
-                <img
-                  v-if="authStatus.user?.avatar_url"
-                  :src="authStatus.user.avatar_url"
-                  class="user-avatar"
-                  alt="Avatar"
-                  width="32"
-                  height="32"
-                />
-                <div class="user-details">
-                  <span class="user-name">{{ authStatus.user?.name || authStatus.user?.login }}</span>
-                  <span class="user-login">@{{ authStatus.user?.login }}</span>
-                </div>
-                <button @click="handleLogout" class="logout-button">Sign out</button>
-              </div>
-            </div>
+            <!-- Error message -->
+            <p v-if="libraryError && activeTab === 'connectors'" class="library-error" style="margin-top: 12px;">{{ libraryError }}</p>
           </div>
+        </div>
 
+        <!-- Tab 3: Remote Libraries -->
+        <div v-if="activeTab === 'libraries'" class="libraries-tab">
           <!-- Library Subscriptions Section -->
           <div class="settings-section">
             <div class="section-header-row">
@@ -433,6 +489,7 @@ import { ref, computed, nextTick, watch, onMounted } from 'vue'
 import { Download, Upload } from 'lucide-vue-next'
 import { getAllTags } from '../utils/tags'
 import { getInlineSuggestion } from '../utils/autocomplete'
+import { useSettings } from '../composables/useSettings'
 import CommandList from './CommandList.vue'
 import TagSelector from './TagSelector.vue'
 import type { Library, AuthStatus } from '../../shared/types'
@@ -468,8 +525,109 @@ const emit = defineEmits<{
 }>()
 
 // Tab state
-type Tab = 'settings' | 'management'
-const activeTab = ref<Tab>('settings')
+type Tab = 'general' | 'connectors' | 'libraries' | 'management'
+const activeTab = ref<Tab>('general')
+
+// ── Settings ───────────────────────────────────────────────────
+const { settings, updateSetting, loaded: settingsLoaded } = useSettings()
+
+// ── Hotkey Picker State ────────────────────────────────────────
+const currentHotkey = ref('CommandOrControl+Shift+Space')
+const hotkeyListening = ref(false)
+const hotkeyFeedback = ref('')
+const hotkeyFeedbackType = ref<'success' | 'error'>('success')
+let hotkeyFeedbackTimer: ReturnType<typeof setTimeout> | null = null
+
+const isMac = window.electronAPI.platform === 'darwin'
+
+function formatHotkeyDisplay(accelerator: string): string {
+  if (!accelerator) return ''
+  const parts = accelerator.split('+')
+  const mapped = parts.map(part => {
+    const lower = part.toLowerCase()
+    if (isMac) {
+      if (lower === 'commandorcontrol' || lower === 'cmdorctrl') return '\u2318'
+      if (lower === 'command' || lower === 'cmd' || lower === 'meta') return '\u2318'
+      if (lower === 'control' || lower === 'ctrl') return '\u2303'
+      if (lower === 'alt' || lower === 'option') return '\u2325'
+      if (lower === 'shift') return '\u21E7'
+    } else {
+      if (lower === 'commandorcontrol' || lower === 'cmdorctrl') return 'Ctrl'
+      if (lower === 'command' || lower === 'cmd' || lower === 'meta') return 'Super'
+      if (lower === 'control' || lower === 'ctrl') return 'Ctrl'
+      if (lower === 'alt') return 'Alt'
+      if (lower === 'shift') return 'Shift'
+    }
+    // Capitalize single keys
+    if (part.length === 1) return part.toUpperCase()
+    return part
+  })
+  return isMac ? mapped.join('') : mapped.join(' + ')
+}
+
+function startHotkeyCapture() {
+  hotkeyListening.value = true
+  hotkeyFeedback.value = ''
+}
+
+function cancelHotkeyCapture() {
+  hotkeyListening.value = false
+}
+
+function captureHotkey(event: KeyboardEvent) {
+  if (!hotkeyListening.value) return
+
+  // Ignore bare modifier keys
+  const modifierKeys = ['Control', 'Shift', 'Alt', 'Meta']
+  if (modifierKeys.includes(event.key)) return
+
+  event.preventDefault()
+  event.stopPropagation()
+
+  // Must have at least one modifier
+  if (!event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
+    return
+  }
+
+  // Build Electron accelerator string
+  const parts: string[] = []
+  if (event.ctrlKey || event.metaKey) parts.push('CommandOrControl')
+  if (event.altKey) parts.push('Alt')
+  if (event.shiftKey) parts.push('Shift')
+
+  // Map key to Electron accelerator key name
+  let key = event.key
+  if (key === ' ') key = 'Space'
+  else if (key.length === 1) key = key.toUpperCase()
+  else if (key === 'ArrowUp') key = 'Up'
+  else if (key === 'ArrowDown') key = 'Down'
+  else if (key === 'ArrowLeft') key = 'Left'
+  else if (key === 'ArrowRight') key = 'Right'
+  else if (key === 'Escape') { cancelHotkeyCapture(); return }
+
+  parts.push(key)
+  const accelerator = parts.join('+')
+
+  hotkeyListening.value = false
+  saveHotkey(accelerator)
+}
+
+async function saveHotkey(accelerator: string) {
+  const result = await updateSetting('general.hotkey', accelerator)
+  if (result.success) {
+    currentHotkey.value = accelerator
+    showHotkeyFeedback('Hotkey updated', 'success')
+  } else {
+    showHotkeyFeedback(result.error || 'Failed to set hotkey', 'error')
+  }
+}
+
+function showHotkeyFeedback(message: string, type: 'success' | 'error') {
+  hotkeyFeedback.value = message
+  hotkeyFeedbackType.value = type
+  if (hotkeyFeedbackTimer) clearTimeout(hotkeyFeedbackTimer)
+  hotkeyFeedbackTimer = setTimeout(() => { hotkeyFeedback.value = '' }, 3000)
+}
 
 // ── GitHub Auth State ──────────────────────────────────────────
 const authStatus = ref<AuthStatus>({ authenticated: false, user: null })
@@ -658,14 +816,22 @@ async function handleExportLibrary() {
   }
 }
 
-// Load auth status and libraries when modal opens
+// Load auth status, libraries, and settings when modal opens
 watch(() => props.show, async (visible) => {
   if (visible) {
     await loadAuthStatus()
     await loadLibraries()
+    // Load current hotkey from settings
+    try {
+      const all = await window.electronAPI.settings.getAll()
+      if (all['general.hotkey'] && typeof all['general.hotkey'] === 'string') {
+        currentHotkey.value = all['general.hotkey']
+      }
+    } catch { /* defaults are fine */ }
   } else {
     // Clear device flow on close
     cancelLogin()
+    hotkeyListening.value = false
   }
 })
 
@@ -1908,6 +2074,207 @@ const handleExportAsLibrary = () => {
   min-height: 400px;
   display: flex;
   flex-direction: column;
+}
+
+/* General Tab */
+.general-tab {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.hotkey-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hotkey-display {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 200px;
+  max-width: 320px;
+  padding: 12px 20px;
+  background: var(--bg-input);
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: all 0.2s;
+  outline: none;
+}
+
+.hotkey-display:hover {
+  border-color: var(--border-hover);
+  background: var(--bg-surface);
+}
+
+.hotkey-display:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.hotkey-display.listening {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+  animation: hotkey-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes hotkey-pulse {
+  0%, 100% { box-shadow: 0 0 0 1px var(--accent); }
+  50% { box-shadow: 0 0 0 3px rgba(236, 80, 2, 0.3); }
+}
+
+.hotkey-keys {
+  font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+}
+
+.hotkey-listening-text {
+  color: var(--text-tertiary);
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+.hotkey-feedback {
+  font-size: 13px;
+  padding: 0;
+  transition: opacity 0.2s;
+}
+
+.hotkey-feedback.success {
+  color: #66bb6a;
+}
+
+.hotkey-feedback.error {
+  color: #ef5350;
+}
+
+/* Connectors Tab */
+.connectors-tab {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.connector-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.connector-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  transition: border-color 0.2s;
+}
+
+.connector-row:hover {
+  border-color: var(--border-hover);
+}
+
+.connector-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--bg-surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.connector-icon--avatar {
+  border-radius: 50%;
+  background: none;
+  overflow: hidden;
+}
+
+.connector-avatar {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.connector-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.connector-name {
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.connector-status {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.connector-status.connected {
+  color: var(--text-secondary);
+}
+
+.connector-action {
+  flex-shrink: 0;
+}
+
+.connector-button {
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid var(--border);
+}
+
+.connector-button.connect {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.connector-button.connect:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.connector-button.connect:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.connector-button.disconnect {
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+}
+
+.connector-button.disconnect:hover {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--text-primary);
+}
+
+.connector-device-flow {
+  margin-top: 12px;
+  padding: 16px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 10px;
 }
 
 /* Libraries Tab */

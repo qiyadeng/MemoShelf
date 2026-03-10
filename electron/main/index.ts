@@ -7,6 +7,7 @@ import { promises as fs } from 'node:fs'
 import * as db from './database'
 import * as github from './github'
 import * as localLibrary from './local-library'
+import * as settings from './settings'
 
 // Enable remote debugging when REMOTE_DEBUG env var is set (e.g. REMOTE_DEBUG=9222)
 if (process.env.REMOTE_DEBUG) {
@@ -59,8 +60,41 @@ let tray: Tray | null = null
 const preload = path.join(__dirname, '../preload/index.mjs')
 const indexHtml = path.join(RENDERER_DIST, 'index.html')
 
-// Global hotkey configuration
-const HOTKEY = process.platform === 'darwin' ? 'Command+Shift+Space' : 'Control+Shift+Space'
+// Global hotkey — loaded from settings, re-registered on change
+let currentHotkey: string = ''
+
+function registerHotkey(accelerator: string): boolean {
+  // Unregister current hotkey if set
+  if (currentHotkey) {
+    try { globalShortcut.unregister(currentHotkey) } catch { /* ignore */ }
+  }
+
+  try {
+    const success = globalShortcut.register(accelerator, () => {
+      console.log(`Global hotkey ${accelerator} pressed`)
+      toggleWindow()
+    })
+
+    if (success) {
+      currentHotkey = accelerator
+      console.log(`Global hotkey ${accelerator} registered`)
+      return true
+    } else {
+      console.error(`Failed to register hotkey ${accelerator}`)
+      // Re-register the old one if the new one failed
+      if (currentHotkey && currentHotkey !== accelerator) {
+        globalShortcut.register(currentHotkey, () => toggleWindow())
+      }
+      return false
+    }
+  } catch (error) {
+    console.error('Error registering hotkey:', error)
+    if (currentHotkey && currentHotkey !== accelerator) {
+      try { globalShortcut.register(currentHotkey, () => toggleWindow()) } catch { /* ignore */ }
+    }
+    return false
+  }
+}
 
 
 // Window management functions
@@ -136,47 +170,65 @@ async function createWindow() {
   // Initialize database when creating window
   db.initializeDatabase()
   db.seedTestData()
-  win = new BrowserWindow({
+
+  // Restore window state from settings
+  const savedState = settings.get<settings.WindowState | null>('general.windowState')
+  const windowOptions: Electron.BrowserWindowConstructorOptions = {
     title: 'SnipForge',
     frame: false,
-    width: 800,
-    height: 600,
+    width: savedState?.width ?? 800,
+    height: savedState?.height ?? 600,
     resizable: true,
-    center: true,
     show: true,
     minimizable: true,
     maximizable: true,
     closable: true,
-    skipTaskbar: false, // Show in taskbar for normal app behavior
+    skipTaskbar: false,
     focusable: true,
     transparent: false,
     hasShadow: true,
-    backgroundColor: '#181818', // Match app background
-    titleBarStyle: 'hiddenInset', // macOS style with native traffic lights
+    backgroundColor: '#181818',
+    titleBarStyle: 'hiddenInset',
     vibrancy: 'sidebar',
     webPreferences: {
       preload,
-      nodeIntegration: false, // SECURITY: Disable Node.js in renderer
-      contextIsolation: true,  // SECURITY: Enable context isolation to prevent XSS → RCE
-      // sandbox: true,        // Disabled: breaks window.prompt() used by RichTextEditor
+      nodeIntegration: false,
+      contextIsolation: true,
     },
-  })
-
-  // Register global hotkey
-  try {
-    const success = globalShortcut.register(HOTKEY, () => {
-      console.log(`Global hotkey ${HOTKEY} pressed`)
-      toggleWindow()
-    })
-
-    if (success) {
-      console.log(`✅ Global hotkey ${HOTKEY} registered successfully`)
-    } else {
-      console.error(`❌ Failed to register global hotkey ${HOTKEY}`)
-    }
-  } catch (error) {
-    console.error('Error registering global hotkey:', error)
   }
+
+  // Restore position if we have a saved state, otherwise center
+  if (savedState) {
+    const { screen } = require('electron')
+    const displays = screen.getAllDisplays()
+    // Only restore position if it's still on a connected display
+    const isOnAnyDisplay = displays.some((display: Electron.Display) => {
+      const { x, y, width, height } = display.workArea
+      return savedState.x < x + width &&
+             savedState.x + savedState.width > x &&
+             savedState.y < y + height &&
+             savedState.y + savedState.height > y
+    })
+    if (isOnAnyDisplay) {
+      windowOptions.x = savedState.x
+      windowOptions.y = savedState.y
+    } else {
+      windowOptions.center = true
+    }
+  } else {
+    windowOptions.center = true
+  }
+
+  win = new BrowserWindow(windowOptions)
+
+  // Restore maximized state after window creation
+  if (savedState?.isMaximized) {
+    win.maximize()
+  }
+
+  // Register global hotkey from settings
+  const hotkey = settings.get<string>('general.hotkey')
+  registerHotkey(hotkey)
 
   if (VITE_DEV_SERVER_URL) { // #298
     win.loadURL(VITE_DEV_SERVER_URL)
@@ -197,9 +249,22 @@ async function createWindow() {
     return { action: 'deny' }
   })
 
-  // Prevent window from closing completely, hide instead (like menu bar apps)
-  // But allow closing when the app is actually quitting
+  // Save window state before hiding/closing
   win.on('close', (event) => {
+    if (win && !win.isDestroyed()) {
+      const bounds = win.getBounds()
+      const windowState: settings.WindowState = {
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
+        isMaximized: win.isMaximized(),
+      }
+      settings.set('general.windowState', windowState)
+    }
+
+    // Prevent window from closing completely, hide instead (like menu bar apps)
+    // But allow closing when the app is actually quitting
     if (!isAppQuiting) {
       event.preventDefault()
       win.hide()
@@ -832,6 +897,38 @@ ipcMain.handle('library:browse', async (_, repoUrl: string) => {
     console.error('Library browse error:', error)
     return { success: false, error: (error as Error).message }
   }
+})
+
+// ── Settings IPC handlers ─────────────────────────────────────────
+ipcMain.handle('settings:get', async (_, key: string) => {
+  if (typeof key !== 'string') return null
+  return settings.get(key)
+})
+
+ipcMain.handle('settings:set', async (_, key: string, value: unknown) => {
+  if (typeof key !== 'string') {
+    return { success: false, error: 'Invalid key' }
+  }
+  try {
+    // Side effects for specific settings
+    if (key === 'general.hotkey' && typeof value === 'string') {
+      const previous = settings.get<string>('general.hotkey')
+      const success = registerHotkey(value)
+      if (!success) {
+        return { success: false, error: `Could not register hotkey "${value}". Kept "${previous}".` }
+      }
+    }
+
+    settings.set(key, value)
+    return { success: true }
+  } catch (error) {
+    console.error('Error setting:', key, error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+ipcMain.handle('settings:getAll', async () => {
+  return settings.getAll()
 })
 
 // IPC handlers for window controls

@@ -20,7 +20,7 @@ SnipForge is a desktop app (Electron + Vue 3 + TypeScript) for saving, searching
 
 **User-first mindset.** We're not building code for code's sake. Every feature exists because a person needs it. Think about how functional it is for the end user — that's the driver, not how fancy the implementation is.
 
-**Specialized agents** for recurring tasks that need a different hat (release engineer, reviewer, technical writer). They run as subagents with their own tools and instructions, keeping the main context clean. See `.claude/README.md` for available agents and when to create new ones.
+**Context-aware workflow split.** The main agent handles backend (Electron main process, SQLite, IPC, GitHub API), architecture, ideation, releases, and doc updates. The **frontend-dev agent** handles all renderer/UI work autonomously — it receives a spec (what to build, which IPC channels to use, expected behavior) and executes the full loop: implement → screenshot → iterate → report back. This split exists to manage context — heavy backend work fills the window, and frontend work (Vue components, CSS, visual verification) needs its own clean context to avoid hallucinations. See `.claude/README.md` for all available agents.
 
 **This file is part of the workflow.** When how we work changes, CLAUDE.md gets updated in the same commit. Don't append endlessly — edit to keep it current.
 

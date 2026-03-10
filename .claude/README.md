@@ -28,23 +28,25 @@ Handles the complete release lifecycle: version bumping, changelog generation, t
 
 ### Frontend Developer
 
-Builds and debugs UI with live access to the running Electron app via Chrome DevTools Protocol. Takes screenshots, clicks elements, inspects DOM, evaluates JS — all without polluting the main context with visual data.
+Autonomous frontend developer with live access to the running Electron app via Chrome DevTools Protocol. Receives a spec from the main agent and executes the full implementation loop independently — code, screenshot, iterate, report. This separation exists to keep backend context out of frontend work and vice versa.
 
 **Prerequisites:** App must be running with `pnpm dev:debug`
 
 **Invoke by asking:**
 ```
-"Use the frontend dev agent to check if the publish button looks right"
-"Have the frontend agent fix the modal styling"
-"Use frontend-dev to test the variable input flow"
+"Use the frontend-dev agent to implement the settings UI — here's the spec: ..."
+"Have the frontend agent build the new modal component"
+"Use frontend-dev to fix the layout issue in the command list"
 ```
 
 **What it does:**
-1. Connects to the live Electron app via CDP (port 9222)
-2. Takes screenshots and DOM snapshots
-3. Edits Vue components / styles (Vite hot-reloads instantly)
-4. Verifies changes visually
-5. Reports back with a final screenshot
+1. Reads the spec and existing code
+2. Checks available IPC channels in `src/preload.ts`
+3. Implements the changes (Vue components, styles, TypeScript)
+4. Screenshots and iterates until it matches the spec
+5. Reports back with summary and final screenshot
+
+**Boundary:** The frontend agent does NOT touch main process files. If it needs an IPC channel or type that doesn't exist, it reports back and the main agent creates it.
 
 **Config:** `.claude/agents/frontend-dev.md`
 

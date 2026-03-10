@@ -71,31 +71,29 @@ The SettingsModal tabs:
 
 ## Phases
 
-### Phase 1: Infrastructure + General Settings (issue [#10](https://github.com/ArtluxDM/SnipForge/issues/10))
+### Phase 1: Infrastructure + General Settings (issue [#10](https://github.com/ArtluxDM/SnipForge/issues/10)) ✅ COMPLETE
 
-The foundation. Once this ships, adding new settings is just a key + UI element.
+The foundation. Adding new settings is now just a key in `DEFAULTS` + one UI element.
 
 **Settings infrastructure:**
-- [ ] `settings` table in `database.ts` (migration)
-- [ ] `electron/main/settings.ts` — get/set/getAll with typed defaults
-- [ ] IPC handlers in `index.ts`
-- [ ] Preload bridge + type declarations
-- [ ] `src/composables/useSettings.ts` — reactive store
+- [x] `settings` table in `database.ts` (migration)
+- [x] `electron/main/settings.ts` — get/set/getAll with typed defaults, JSON encoding, overlay pattern
+- [x] IPC handlers in `index.ts` — `settings:get`, `settings:set`, `settings:getAll`
+- [x] Preload bridge + type declarations
+- [x] `src/composables/useSettings.ts` — reactive singleton store, shared across components
 
-**General tab (new, becomes first tab):**
-- [ ] Global hotkey remapping — input field that captures key combo, re-registers `globalShortcut` on save
-- [ ] Window state persistence — save size/position on close, restore on launch
+**General tab (new, first tab):**
+- [x] Global hotkey remapping — picker captures key combo, validates modifiers, re-registers `globalShortcut` live, falls back on failure
+- [x] Window state persistence — bounds + maximized saved on close, restored on launch, off-screen detection
 
 **Connectors tab (new):**
-- [ ] Move GitHub OAuth from Libraries tab here
-- [ ] Designed as a list of connected accounts (GitHub now, others later)
-- [ ] Each connector shows: icon, provider name, connected user, disconnect button
+- [x] GitHub OAuth moved from Libraries tab
+- [x] Extensible list pattern (icon, provider, status/avatar, action button)
+- [x] Connected state shows user's GitHub avatar (circular), disconnected shows GitHub icon
 
 **Tab restructure:**
-- Add General tab (first position)
-- Add Connectors tab (second position)
-- Libraries tab loses OAuth section, keeps subscriptions + sync controls
-- Manage Commands tab unchanged
+- [x] General (first) → Connectors → Libraries → Manage Commands
+- [x] Libraries tab cleaned of OAuth, keeps subscriptions + sync controls
 
 **Key files:**
 - `electron/main/settings.ts` — NEW: settings CRUD

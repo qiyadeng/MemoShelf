@@ -35,6 +35,11 @@ interface Window {
     shell: {
       openExternal: (url: string) => Promise<void>
     }
+    settings: {
+      get: (key: string) => Promise<unknown>
+      set: (key: string, value: unknown) => Promise<{ success: boolean; error?: string }>
+      getAll: () => Promise<Record<string, unknown>>
+    }
     window: {
       minimize: () => Promise<void>
       maximize: () => Promise<void>

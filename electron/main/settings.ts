@@ -1,0 +1,58 @@
+import * as db from './database'
+
+// ── Defaults ─────────────────────────────────────────────────────
+// Source of truth for available settings and their types.
+// DB only stores overrides — defaults change with app updates without migration.
+
+export interface WindowState {
+  x: number
+  y: number
+  width: number
+  height: number
+  isMaximized: boolean
+}
+
+const DEFAULTS: Record<string, unknown> = {
+  'general.hotkey': 'CommandOrControl+Shift+Space',
+  'general.windowState': null as WindowState | null,
+}
+
+// ── CRUD ─────────────────────────────────────────────────────────
+
+export function get<T>(key: string): T {
+  const raw = db.getSettingValue(key)
+  if (raw === null) {
+    return DEFAULTS[key] as T
+  }
+  try {
+    return JSON.parse(raw) as T
+  } catch {
+    return raw as T
+  }
+}
+
+export function set(key: string, value: unknown): void {
+  db.setSettingValue(key, JSON.stringify(value))
+}
+
+export function getAll(): Record<string, unknown> {
+  // Start with defaults, overlay DB overrides
+  const result = { ...DEFAULTS }
+  const stored = db.getAllSettings()
+  for (const [key, raw] of Object.entries(stored)) {
+    try {
+      result[key] = JSON.parse(raw)
+    } catch {
+      result[key] = raw
+    }
+  }
+  return result
+}
+
+export function remove(key: string): void {
+  db.deleteSetting(key)
+}
+
+export function getDefaults(): Record<string, unknown> {
+  return { ...DEFAULTS }
+}

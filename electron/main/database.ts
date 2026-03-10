@@ -90,6 +90,14 @@ try {
         );
     `)
 
+    // Settings storage (key-value, JSON-encoded values)
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+    `)
+
     // Library manifest_path migration
     try {
         db.exec(`ALTER TABLE libraries ADD COLUMN manifest_path TEXT`)
@@ -395,4 +403,32 @@ export function setAuthValue(key: string, value: string): void {
 export function deleteAuthValue(key: string): void {
     if (!db) throw new Error("Database not initialized")
     db.prepare("DELETE FROM auth WHERE key = ?").run(key)
+}
+
+// ── Settings storage ──────────────────────────────────────────────
+
+export function getSettingValue(key: string): string | null {
+    if (!db) throw new Error("Database not initialized")
+    const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(key) as { value: string } | undefined
+    return row?.value ?? null
+}
+
+export function setSettingValue(key: string, value: string): void {
+    if (!db) throw new Error("Database not initialized")
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run(key, value)
+}
+
+export function getAllSettings(): Record<string, string> {
+    if (!db) throw new Error("Database not initialized")
+    const rows = db.prepare("SELECT key, value FROM settings").all() as Array<{ key: string; value: string }>
+    const result: Record<string, string> = {}
+    for (const row of rows) {
+        result[row.key] = row.value
+    }
+    return result
+}
+
+export function deleteSetting(key: string): void {
+    if (!db) throw new Error("Database not initialized")
+    db.prepare("DELETE FROM settings WHERE key = ?").run(key)
 }

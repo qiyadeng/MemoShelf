@@ -45,6 +45,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   shell: {
     openExternal: (url: string): Promise<void> => ipcRenderer.invoke('shell:openExternal', url)
   },
+  // settings methods
+  settings: {
+    get: (key: string): Promise<unknown> =>
+      ipcRenderer.invoke('settings:get', key),
+    set: (key: string, value: unknown): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('settings:set', key, value),
+    getAll: (): Promise<Record<string, unknown>> =>
+      ipcRenderer.invoke('settings:getAll'),
+  },
   // window control methods
   window: {
     minimize: (): Promise<void> => ipcRenderer.invoke('window:minimize'),
@@ -126,6 +135,11 @@ declare global {
       platform: string,
       shell: {
         openExternal: (url: string) => Promise<void>
+      },
+      settings: {
+        get: (key: string) => Promise<unknown>
+        set: (key: string, value: unknown) => Promise<{ success: boolean; error?: string }>
+        getAll: () => Promise<Record<string, unknown>>
       },
       window: {
         minimize: () => Promise<void>
