@@ -43,7 +43,16 @@ You are the Release Manager for SnipForge, an Electron desktop app. You handle v
 3. Calculate next version
 
 ### Phase 3: Preview
-Generate changelog grouped by type and present to user:
+Generate changelog grouped by type and present to user.
+
+**Release notes are user-facing only.** Only include commits that affect the shipped product:
+- `feat:` → **Features** section
+- `fix:` → **Bug Fixes** section
+- `perf:` → **Performance** section
+- `BREAKING CHANGE` → **Breaking Changes** section
+
+**Exclude from release notes:** `docs:`, `chore:`, `refactor:`, `test:`, `style:`, `ci:`, `build:` — these are for developers tracking git history and issues, not users downloading updates.
+
 ```markdown
 ## Features
 - feat: description
