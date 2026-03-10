@@ -13,6 +13,7 @@ import BulkPublishModal from './components/BulkPublishModal.vue'
 import { Copy, Edit, Trash2, HelpCircle, Settings, Anvil, CirclePlus, Upload, CloudOff, PackagePlus } from 'lucide-vue-next'
 import { VList } from 'virtua/vue'
 import { extractVariables, substituteVariables, hasVariables, highlightVariables, type VariableValues } from './utils/variables'
+import { useSettings } from './composables/useSettings'
 import { exportCommands, importCommands, validateExportData, generateExportFilename, detectDuplicates, type DuplicateMatch, type ImportCommand } from './utils/importExport'
 import { fuzzySearchCommands } from './utils/fuzzySearch'
 import { getAllTags } from './utils/tags'
@@ -22,6 +23,9 @@ import hljs from 'highlight.js'
 import type { CommandWithTags, Library } from '../shared/types'
 
 type Command = CommandWithTags
+
+// ── Settings ───────────────────────────────────────────────────
+const { settings } = useSettings()
 
 // Platform detection - use the synchronous platform property
 const isWindows = ref(false)
@@ -367,7 +371,16 @@ const copyToClipboard = async (text: string, language: string = 'plaintext') => 
 
     // Write to clipboard with both formats
     await window.electronAPI.clipboard.write({ text: plainText, html })
-    showNotificationToast('Copied to clipboard!')
+
+    // Show toast with or without preview
+    if (settings.value['display.previewOnCopy'] !== false) {
+      const preview = plainText.length > 60 ? plainText.substring(0, 60).trimEnd() + '...' : plainText
+      // Collapse whitespace for cleaner preview
+      const cleanPreview = preview.replace(/\s+/g, ' ').trim()
+      showNotificationToast(`Copied: ${cleanPreview}`)
+    } else {
+      showNotificationToast('Copied to clipboard!')
+    }
   } catch (error) {
     console.error('Error copying command to clipboard:', error)
     showNotificationToast('Failed to copy')
@@ -860,6 +873,49 @@ const deleteCommand = async (id: number) => {
     selectedCommandForEdit.value = null
   }
   
+// ── Shortcut Matching ──────────────────────────────────────────
+// Default shortcuts (duplicated from settings.ts to avoid main process import)
+const DEFAULT_SHORTCUTS: Record<string, string> = {
+  'navigate.up': 'ArrowUp',
+  'navigate.down': 'ArrowDown',
+  'action.copy': 'c',
+  'action.copyTemplate': 'Shift+c',
+  'action.new': 'n',
+  'action.edit': 'e',
+  'action.publish': 'p',
+  'action.bulkPublish': 'Shift+p',
+  'action.unpublish': 'u',
+  'action.delete': 'Backspace',
+}
+
+const shortcuts = computed(() => {
+  const stored = settings.value['shortcuts'] as Record<string, string> | undefined
+  return { ...DEFAULT_SHORTCUTS, ...stored }
+})
+
+function matchesShortcut(event: KeyboardEvent, binding: string): boolean {
+  const parts = binding.split('+')
+  const key = parts[parts.length - 1]
+  const modifiers = parts.slice(0, -1).map(m => m.toLowerCase())
+
+  const requireShift = modifiers.includes('shift')
+  const requireCmdOrCtrl = modifiers.includes('cmdorctrl')
+  const requireAlt = modifiers.includes('alt')
+
+  if (requireShift !== event.shiftKey) return false
+  if (requireCmdOrCtrl !== (event.metaKey || event.ctrlKey)) return false
+  if (requireAlt !== event.altKey) return false
+  // Reject extra modifiers not in the binding
+  if (!requireCmdOrCtrl && (event.metaKey || event.ctrlKey)) return false
+
+  return event.key.toLowerCase() === key.toLowerCase()
+}
+
+function matchAction(event: KeyboardEvent, action: string): boolean {
+  const binding = shortcuts.value[action]
+  return binding ? matchesShortcut(event, binding) : false
+}
+
 // keyboard Navigation and actions
 const handleKeyboard = (event: KeyboardEvent) => {
   const target = event.target as HTMLElement
@@ -913,65 +969,50 @@ const handleKeyboard = (event: KeyboardEvent) => {
   if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return
 
   if (filteredCommands.value.length === 0) return
-  if (event.key === 'ArrowDown') {
+
+  if (matchAction(event, 'navigate.down')) {
     event.preventDefault()
-    //find current selected index
     const currentIndex = filteredCommands.value.findIndex(cmd => cmd.id === selectedCommandId.value)
     const nextIndex = Math.min(currentIndex + 1, filteredCommands.value.length - 1)
     selectedCommandId.value = filteredCommands.value[nextIndex].id
-    }else if (event.key === 'ArrowUp') {
+  } else if (matchAction(event, 'navigate.up')) {
     event.preventDefault()
     const currentIndex = filteredCommands.value.findIndex(cmd => cmd.id === selectedCommandId.value)
     const prevIndex = Math.max(currentIndex - 1, 0)
     selectedCommandId.value = filteredCommands.value[prevIndex].id
-    }else if (event.key === 'c' && !event.shiftKey){
+  } else if (matchAction(event, 'action.copy')) {
     event.preventDefault()
     const selectedCommand = filteredCommands.value.find(cmd => cmd.id === selectedCommandId.value)
-    if (selectedCommand) {
-      copyCommand(selectedCommand)
-    }
-    }else if (event.key === 'C' && event.shiftKey){
+    if (selectedCommand) copyCommand(selectedCommand)
+  } else if (matchAction(event, 'action.copyTemplate')) {
     event.preventDefault()
     const selectedCommand = filteredCommands.value.find(cmd => cmd.id === selectedCommandId.value)
-    if (selectedCommand) {
-      copyCommandTemplate(selectedCommand.body, selectedCommand.language)
-    }
-    }else if (event.key === 'e'){
+    if (selectedCommand) copyCommandTemplate(selectedCommand.body, selectedCommand.language)
+  } else if (matchAction(event, 'action.edit')) {
     event.preventDefault()
     const selectedCommand = filteredCommands.value.find(cmd => cmd.id === selectedCommandId.value)
-    if (selectedCommand) {
-      editCommand(selectedCommand.id)
-    }
-    }else if (event.key === 'n'){
+    if (selectedCommand) editCommand(selectedCommand.id)
+  } else if (matchAction(event, 'action.new')) {
     event.preventDefault()
-    // Open modal in add mode
     selectedCommandForEdit.value = null
     modalMode.value = 'add'
     showModal.value = true
-    }else if (event.key === 'P' && event.shiftKey){
+  } else if (matchAction(event, 'action.bulkPublish')) {
     event.preventDefault()
-    if (initializedLibraries.value.length > 0) {
-      showBulkPublishModal.value = true
-    }
-    }else if (event.key === 'p' && !event.shiftKey){
+    if (initializedLibraries.value.length > 0) showBulkPublishModal.value = true
+  } else if (matchAction(event, 'action.publish')) {
     event.preventDefault()
     const selectedCommand = filteredCommands.value.find(cmd => cmd.id === selectedCommandId.value)
-    if (selectedCommand) {
-      startPublish(selectedCommand.id)
-    }
-    }else if (event.key === 'u'){
+    if (selectedCommand) startPublish(selectedCommand.id)
+  } else if (matchAction(event, 'action.unpublish')) {
     event.preventDefault()
     const selectedCommand = filteredCommands.value.find(cmd => cmd.id === selectedCommandId.value)
-    if (selectedCommand && selectedCommand.source === 'remote') {
-      startUnpublish(selectedCommand.id)
-    }
-    }else if (event.key === 'Backspace'){
-      event.preventDefault()
-      const selectedCommand = filteredCommands.value.find(cmd => cmd.id === selectedCommandId.value)
-      if (selectedCommand) {
-        deleteCommand(selectedCommand.id)
-      }
-    }
+    if (selectedCommand && selectedCommand.source === 'remote') startUnpublish(selectedCommand.id)
+  } else if (matchAction(event, 'action.delete')) {
+    event.preventDefault()
+    const selectedCommand = filteredCommands.value.find(cmd => cmd.id === selectedCommandId.value)
+    if (selectedCommand) deleteCommand(selectedCommand.id)
+  }
 }
 
 // To track which command is selected
@@ -1169,6 +1210,9 @@ const openDescriptionModal = (title: string, description: string) => {
                 </button>
               </div>
               <div class="command-body" v-html="getCommandPreview(command.body, command.language)"></div>
+              <div v-if="settings['display.tagPills'] !== false && command.tagsArray && command.tagsArray.length > 0" class="command-tags">
+                <span v-for="tag in command.tagsArray" :key="tag" class="tag-pill">{{ tag }}</span>
+              </div>
             </div>
             <div class="command-actions">
               <button @click.stop="copyCommand(command)" tabindex="-1" title="Copy command">
@@ -1711,6 +1755,33 @@ html, body, #app {
 .variable-highlight {
   color: #e8a948;
   font-weight: 500;
+}
+
+/* Tag pills */
+.command-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.tag-pill {
+  display: inline-block;
+  padding: 1px 7px;
+  font-size: 10px;
+  font-weight: 500;
+  border-radius: 9999px;
+  background-color: var(--bg-surface);
+  color: var(--text-tertiary);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+  line-height: 1.5;
+}
+
+.command-item.selected .tag-pill {
+  background-color: var(--bg-elevated);
+  color: var(--text-secondary);
+  border-color: var(--border-hover);
 }
 
 /* Command actions */

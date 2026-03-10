@@ -111,13 +111,19 @@ The foundation. Adding new settings is now just a key in `DEFAULTS` + one UI ele
 - [x] Sync status line — relative time ("2 min ago"), derived from most recent `last_synced_at` across libraries, refreshes every 30s
 - [x] `library:autoSyncResult` event pushes results to renderer, triggers library list refresh
 
-### Phase 3: Display & Shortcuts
+### Phase 3: Display & Shortcuts ✅ COMPLETE
 
 Unblocks parked ideas (tag pills, preview on copy). All in the General tab.
 
-- [ ] Display settings: tag pills toggle, preview on copy toggle
-- [ ] Keyboard shortcut remapping — table of current bindings, click-to-rebind
-- [ ] Shortcuts map (defaults + user overrides) stored in settings, consumed by App.vue keydown handler
+- [x] Display settings: tag pills toggle, preview on copy toggle
+- [x] Keyboard shortcut remapping — table of current bindings, click-to-rebind, conflict detection
+- [x] Shortcuts map (defaults + user overrides) stored in `shortcuts` setting, consumed by App.vue `matchAction()` helper
+- [x] Reset to defaults button
+
+**Key changes:**
+- `electron/main/settings.ts` — added `display.tagPills`, `display.previewOnCopy`, `shortcuts` defaults with `DEFAULT_SHORTCUTS` export
+- `src/App.vue` — tag pills rendering (`.tag-pill`), preview on copy toast, `matchAction()` + `matchesShortcut()` replace hardcoded key checks in `handleKeyboard`
+- `src/components/SettingsModal.vue` — Display section (toggle switches), Keyboard Shortcuts section (shortcut table with click-to-rebind, conflict detection, reset)
 
 ---
 

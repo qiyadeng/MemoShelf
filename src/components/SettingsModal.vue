@@ -63,6 +63,82 @@
               </span>
             </div>
           </div>
+
+          <!-- Display Settings -->
+          <div class="settings-section">
+            <h3>Display</h3>
+            <div class="toggle-row">
+              <div class="toggle-label">
+                <span class="toggle-title">Tag pills</span>
+                <span class="toggle-desc">Show tags as pills on commands in the list</span>
+              </div>
+              <button
+                class="toggle-switch"
+                :class="{ on: settings['display.tagPills'] !== false }"
+                @click="updateSetting('display.tagPills', settings['display.tagPills'] === false)"
+                role="switch"
+                :aria-checked="settings['display.tagPills'] !== false"
+              >
+                <span class="toggle-knob" />
+              </button>
+            </div>
+            <div class="toggle-row">
+              <div class="toggle-label">
+                <span class="toggle-title">Preview on copy</span>
+                <span class="toggle-desc">Show a snippet of the copied text in the notification</span>
+              </div>
+              <button
+                class="toggle-switch"
+                :class="{ on: settings['display.previewOnCopy'] !== false }"
+                @click="updateSetting('display.previewOnCopy', settings['display.previewOnCopy'] === false)"
+                role="switch"
+                :aria-checked="settings['display.previewOnCopy'] !== false"
+              >
+                <span class="toggle-knob" />
+              </button>
+            </div>
+          </div>
+
+          <!-- Keyboard Shortcuts -->
+          <div class="settings-section" style="border-bottom: none;">
+            <h3>Keyboard Shortcuts</h3>
+            <p class="section-description">
+              Click a shortcut to rebind it. Press Escape to cancel.
+            </p>
+            <div class="shortcuts-table">
+              <div
+                v-for="action in shortcutActions"
+                :key="action.id"
+                class="shortcut-row"
+              >
+                <span class="shortcut-action">{{ action.label }}</span>
+                <button
+                  class="shortcut-key"
+                  :class="{ listening: shortcutListeningAction === action.id }"
+                  @click="startShortcutCapture(action.id)"
+                  @keydown="captureShortcut($event, action.id)"
+                  @blur="cancelShortcutCapture"
+                >
+                  <span v-if="shortcutListeningAction === action.id" class="shortcut-listening-text">
+                    Press a key...
+                  </span>
+                  <span v-else>{{ formatShortcutDisplay(currentShortcuts[action.id]) }}</span>
+                </button>
+              </div>
+            </div>
+            <div class="shortcuts-footer">
+              <span v-if="shortcutFeedback" class="shortcut-feedback" :class="shortcutFeedbackType">
+                {{ shortcutFeedback }}
+              </span>
+              <button
+                class="reset-shortcuts-button"
+                @click="resetShortcuts"
+                :disabled="!hasCustomShortcuts"
+              >
+                Reset to defaults
+              </button>
+            </div>
+          </div>
         </div>
 
         <!-- Tab 2: Connectors -->
@@ -659,6 +735,153 @@ function showHotkeyFeedback(message: string, type: 'success' | 'error') {
   hotkeyFeedbackType.value = type
   if (hotkeyFeedbackTimer) clearTimeout(hotkeyFeedbackTimer)
   hotkeyFeedbackTimer = setTimeout(() => { hotkeyFeedback.value = '' }, 3000)
+}
+
+// ── Shortcut Remapping ─────────────────────────────────────────
+const DEFAULT_SHORTCUTS: Record<string, string> = {
+  'navigate.up': 'ArrowUp',
+  'navigate.down': 'ArrowDown',
+  'action.copy': 'c',
+  'action.copyTemplate': 'Shift+c',
+  'action.new': 'n',
+  'action.edit': 'e',
+  'action.publish': 'p',
+  'action.bulkPublish': 'Shift+p',
+  'action.unpublish': 'u',
+  'action.delete': 'Backspace',
+}
+
+const shortcutActions = [
+  { id: 'navigate.up', label: 'Navigate up' },
+  { id: 'navigate.down', label: 'Navigate down' },
+  { id: 'action.copy', label: 'Copy command' },
+  { id: 'action.copyTemplate', label: 'Copy template' },
+  { id: 'action.new', label: 'New command' },
+  { id: 'action.edit', label: 'Edit command' },
+  { id: 'action.publish', label: 'Publish' },
+  { id: 'action.bulkPublish', label: 'Bulk publish' },
+  { id: 'action.unpublish', label: 'Unpublish' },
+  { id: 'action.delete', label: 'Delete command' },
+]
+
+const currentShortcuts = computed(() => {
+  const stored = settings.value['shortcuts'] as Record<string, string> | undefined
+  return { ...DEFAULT_SHORTCUTS, ...stored }
+})
+
+const hasCustomShortcuts = computed(() => {
+  const stored = settings.value['shortcuts'] as Record<string, string> | undefined
+  if (!stored) return false
+  return Object.entries(stored).some(([k, v]) => DEFAULT_SHORTCUTS[k] !== v)
+})
+
+const shortcutListeningAction = ref<string | null>(null)
+const shortcutFeedback = ref('')
+const shortcutFeedbackType = ref<'success' | 'error'>('success')
+let shortcutFeedbackTimer: ReturnType<typeof setTimeout> | null = null
+
+function formatShortcutDisplay(binding: string): string {
+  if (!binding) return ''
+  const parts = binding.split('+')
+  const mapped = parts.map(part => {
+    const lower = part.toLowerCase()
+    if (isMac) {
+      if (lower === 'cmdorctrl') return '\u2318'
+      if (lower === 'shift') return '\u21E7'
+      if (lower === 'alt') return '\u2325'
+    } else {
+      if (lower === 'cmdorctrl') return 'Ctrl'
+      if (lower === 'shift') return 'Shift'
+      if (lower === 'alt') return 'Alt'
+    }
+    // Special key display
+    if (lower === 'arrowup') return '\u2191'
+    if (lower === 'arrowdown') return '\u2193'
+    if (lower === 'arrowleft') return '\u2190'
+    if (lower === 'arrowright') return '\u2192'
+    if (lower === 'backspace') return '\u232B'
+    if (lower === 'space') return 'Space'
+    if (lower === 'enter') return '\u21B5'
+    if (lower === 'tab') return '\u21E5'
+    // Single letter uppercase
+    if (part.length === 1) return part.toUpperCase()
+    return part
+  })
+  return isMac ? mapped.join('') : mapped.join(' + ')
+}
+
+function startShortcutCapture(actionId: string) {
+  shortcutListeningAction.value = actionId
+  shortcutFeedback.value = ''
+}
+
+function cancelShortcutCapture() {
+  shortcutListeningAction.value = null
+}
+
+function captureShortcut(event: KeyboardEvent, actionId: string) {
+  if (shortcutListeningAction.value !== actionId) return
+
+  // Ignore bare modifier keys
+  const modifierKeys = ['Control', 'Shift', 'Alt', 'Meta']
+  if (modifierKeys.includes(event.key)) return
+
+  event.preventDefault()
+  event.stopPropagation()
+
+  if (event.key === 'Escape') { cancelShortcutCapture(); return }
+
+  // Build binding string
+  const parts: string[] = []
+  if (event.metaKey || event.ctrlKey) parts.push('CmdOrCtrl')
+  if (event.altKey) parts.push('Alt')
+  if (event.shiftKey) parts.push('Shift')
+
+  let key = event.key
+  if (key === ' ') key = 'Space'
+  else if (key === 'ArrowUp' || key === 'ArrowDown' || key === 'ArrowLeft' || key === 'ArrowRight') { /* keep as-is */ }
+  else if (key.length === 1) key = key.toLowerCase()
+
+  parts.push(key)
+  const binding = parts.join('+')
+
+  // Check for conflicts with other shortcuts
+  const conflict = Object.entries(currentShortcuts.value).find(
+    ([id, b]) => id !== actionId && b.toLowerCase() === binding.toLowerCase()
+  )
+  if (conflict) {
+    const conflictLabel = shortcutActions.find(a => a.id === conflict[0])?.label || conflict[0]
+    showShortcutFeedback(`Already used by "${conflictLabel}"`, 'error')
+    shortcutListeningAction.value = null
+    return
+  }
+
+  shortcutListeningAction.value = null
+  saveShortcut(actionId, binding)
+}
+
+async function saveShortcut(actionId: string, binding: string) {
+  const updated = { ...currentShortcuts.value, [actionId]: binding }
+  const result = await updateSetting('shortcuts', updated)
+  if (result.success) {
+    showShortcutFeedback('Shortcut updated', 'success')
+  } else {
+    showShortcutFeedback(result.error || 'Failed to save', 'error')
+  }
+}
+
+async function resetShortcuts() {
+  const result = await updateSetting('shortcuts', { ...DEFAULT_SHORTCUTS })
+  if (result.success) {
+    showShortcutFeedback('Shortcuts reset to defaults', 'success')
+  }
+}
+
+function showShortcutFeedback(message: string, type: 'success' | 'error') {
+  shortcutFeedback.value = message
+  shortcutFeedbackType.value = type
+  if (shortcutFeedbackTimer) clearTimeout(shortcutFeedbackTimer)
+  shortcutFeedbackTimer = setTimeout(() => { shortcutFeedback.value = '' }, 3000)
 }
 
 // ── GitHub Auth State ──────────────────────────────────────────
@@ -2287,6 +2510,141 @@ const handleExportAsLibrary = () => {
 
 .hotkey-feedback.error {
   color: #ef5350;
+}
+
+/* Toggle rows (display settings) */
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+}
+
+.toggle-row + .toggle-row {
+  border-top: 1px solid var(--border);
+}
+
+.toggle-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.toggle-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.toggle-desc {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+/* Shortcuts table */
+.shortcuts-table {
+  display: flex;
+  flex-direction: column;
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 0;
+}
+
+.shortcut-row + .shortcut-row {
+  border-top: 1px solid var(--border);
+}
+
+.shortcut-action {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.shortcut-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 60px;
+  padding: 4px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  outline: none;
+  font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+}
+
+.shortcut-key:hover {
+  border-color: var(--border-hover);
+  background: var(--bg-surface);
+}
+
+.shortcut-key:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.shortcut-key.listening {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+  animation: hotkey-pulse 1.5s ease-in-out infinite;
+}
+
+.shortcut-listening-text {
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.shortcuts-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+  min-height: 32px;
+}
+
+.shortcut-feedback {
+  font-size: 13px;
+  transition: opacity 0.2s;
+}
+
+.shortcut-feedback.success {
+  color: #66bb6a;
+}
+
+.shortcut-feedback.error {
+  color: #ef5350;
+}
+
+.reset-shortcuts-button {
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  transition: all 0.2s;
+  margin-left: auto;
+}
+
+.reset-shortcuts-button:hover:not(:disabled) {
+  border-color: var(--border-hover);
+  color: var(--text-primary);
+}
+
+.reset-shortcuts-button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
 }
 
 /* Connectors Tab */

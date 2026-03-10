@@ -12,10 +12,28 @@ export interface WindowState {
   isMaximized: boolean
 }
 
+// Default keyboard shortcuts — action name → keybinding string
+// Format: "key" or "Shift+key" or "CmdOrCtrl+key"
+export const DEFAULT_SHORTCUTS: Record<string, string> = {
+  'navigate.up': 'ArrowUp',
+  'navigate.down': 'ArrowDown',
+  'action.copy': 'c',
+  'action.copyTemplate': 'Shift+c',
+  'action.new': 'n',
+  'action.edit': 'e',
+  'action.publish': 'p',
+  'action.bulkPublish': 'Shift+p',
+  'action.unpublish': 'u',
+  'action.delete': 'Backspace',
+}
+
 const DEFAULTS: Record<string, unknown> = {
   'general.hotkey': 'CommandOrControl+Shift+Space',
   'general.windowState': null as WindowState | null,
   'library.autoSync': false, // master toggle for auto-sync
+  'display.tagPills': true,
+  'display.previewOnCopy': true,
+  'shortcuts': { ...DEFAULT_SHORTCUTS },
 }
 
 // ── CRUD ─────────────────────────────────────────────────────────
