@@ -32,17 +32,20 @@ Variables are highlighted in the command preview (gold/amber color, `#e8a948`) s
 
 ---
 
-## Known Issue: Template Syntax Collision
+## Template Syntax Collision — Resolved
 
-**Status:** Open — [issue #11](https://github.com/ArtluxDM/SnipForge/issues/11)
+**Status:** Fixed — [issue #11](https://github.com/ArtluxDM/SnipForge/issues/11)
 
-The current regex (`/\{\{([^}]+)\}\}/g`) matches **anything** inside `{{ }}`, which means Go template and Mustache/Handlebars syntax collides with SnipForge variables:
+The variable regex now only matches **plain names** (letters, numbers, spaces, hyphens, underscores). Anything else inside `{{ }}` is treated as literal template syntax and left untouched:
 
-- `docker ps --format '{{.Names}}'` → `.Names` detected as a variable
-- `kubectl get pods -o jsonpath='{{.metadata.name}}'` → `.metadata.name` detected
-- Helm: `{{- include "chart.name" . }}`, Handlebars: `{{#if}}`, `{{> partial}}`
+| Input | Treated as |
+|-------|-----------|
+| `{{container name}}`, `{{port}}`, `{{k8s-namespace}}` | SnipForge variable (prompts user) |
+| `{{.Names}}`, `{{.metadata.name}}` | Go template literal (ignored) |
+| `{{#if condition}}`, `{{> partial}}` | Handlebars syntax (ignored) |
+| `{{name \| upper}}`, `{{- include ... }}` | Template filter/directive (ignored) |
 
-**Planned fix:** Restrict the variable regex to only match plain names (letters, numbers, spaces, hyphens, underscores). Content starting with `.`, `#`, `/`, `>`, or containing pipes, quotes, or parens is treated as literal template syntax and left alone.
+**Regex:** `/\{\{(\s*[a-zA-Z0-9][a-zA-Z0-9 _-]*\s*)\}\}/g` — requires content to start with an alphanumeric character and contain only alphanumerics, spaces, hyphens, and underscores.
 
 ---
 
@@ -67,7 +70,7 @@ Four functions, all using the same regex pattern:
 | `hasVariables(text)` | Quick boolean check — used to decide whether to show the modal |
 | `highlightVariables(escapedHtml)` | Wraps `{{name}}` in `<span class="variable-highlight">` for preview display |
 
-**Current regex:** `/\{\{([^}]+)\}\}/g` — matches any non-empty content between `{{ }}`.
+**Variable regex:** `/\{\{(\s*[a-zA-Z0-9][a-zA-Z0-9 _-]*\s*)\}\}/g` — matches only plain names, ignores Go/Handlebars/Mustache template syntax.
 
 ### `src/components/VariableInputModal.vue`
 
@@ -112,7 +115,7 @@ Defined in `App.vue` (not scoped — applies to `v-html` rendered content).
 
 | Decision | Choice | Why |
 |----------|--------|-----|
-| Syntax | `{{name}}` double braces | Familiar (Mustache/Handlebars), visually distinct, unlikely in shell commands (except Go templates — see #11) |
+| Syntax | `{{name}}` double braces | Familiar, visually distinct. Regex restricted to plain names to avoid collision with Go templates / Handlebars (#11) |
 | Variable names | Spaces allowed | Descriptive names like `{{container name}}` read better than `{{container_name}}` |
 | Substitution | All-or-nothing | Every variable must have a value before copy — prevents accidentally copying partial templates |
 | Raw copy | Shift+C | Power users need to copy templates as-is for sharing or editing elsewhere |

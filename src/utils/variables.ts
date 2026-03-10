@@ -1,20 +1,20 @@
 /**
- * Utility functions for handling command variables with {{variable name}} syntax
+ * Utility functions for handling command variables with {{variable name}} syntax.
+ *
+ * SnipForge variables are plain names: letters, numbers, spaces, hyphens, underscores.
+ * Anything else inside {{ }} is treated as literal template syntax (Go templates,
+ * Handlebars, Mustache, etc.) and left untouched.
  */
 
-/**
- * Extracts unique variable names from a command body text
- * Supports descriptive names with spaces like {{user ID}} or {{server name}}
- *
- * @param text - The command body text to extract variables from
- * @returns Array of unique variable names (without the braces)
- *
- * @example
- * extractVariables("docker exec -it {{container name}} {{command}}")
- * // Returns: ["container name", "command"]
- */
+// Matches {{plain name}} but NOT {{.Names}}, {{#if}}, {{> partial}}, {{name | upper}}, etc.
+const VAR_PATTERN = /\{\{(\s*[a-zA-Z0-9][a-zA-Z0-9 _-]*\s*)\}\}/g
+
+function varRegex(): RegExp {
+  return new RegExp(VAR_PATTERN.source, VAR_PATTERN.flags)
+}
+
 export function extractVariables(text: string): string[] {
-  const regex = /\{\{([^}]+)\}\}/g
+  const regex = varRegex()
   const variables: string[] = []
   let match
 
@@ -28,39 +28,15 @@ export function extractVariables(text: string): string[] {
   return variables
 }
 
-/**
- * Substitutes variables in text with provided values
- *
- * @param text - The command body text containing variables
- * @param values - Object mapping variable names to their values
- * @returns Text with variables replaced by their values
- *
- * @example
- * substituteVariables(
- *   "docker exec -it {{container}} {{command}}",
- *   { "container": "my-app", "command": "/bin/bash" }
- * )
- * // Returns: "docker exec -it my-app /bin/bash"
- */
 export function substituteVariables(text: string, values: Record<string, string>): string {
-  return text.replace(/\{\{([^}]+)\}\}/g, (match, variable) => {
+  return text.replace(varRegex(), (match, variable) => {
     const variableName = variable.trim()
-    return values[variableName] || match // Keep original if no value provided
+    return values[variableName] || match
   })
 }
 
-/**
- * Checks if a text contains any variables
- *
- * @param text - The text to check
- * @returns True if the text contains at least one variable
- *
- * @example
- * hasVariables("ls -la") // Returns: false
- * hasVariables("docker logs {{container}}") // Returns: true
- */
 export function hasVariables(text: string): boolean {
-  return /\{\{[^}]+\}\}/.test(text)
+  return varRegex().test(text)
 }
 
 /**
@@ -69,7 +45,7 @@ export function hasVariables(text: string): boolean {
  */
 export function highlightVariables(escapedHtml: string): string {
   return escapedHtml.replace(
-    /\{\{([^}]+)\}\}/g,
+    varRegex(),
     '<span class="variable-highlight">{{$1}}</span>'
   )
 }
