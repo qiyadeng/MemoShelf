@@ -513,9 +513,31 @@ Key changes:
 4. Export with no selection → all commands exported
 5. Duplicate titles get unique filenames (no overwrites)
 
-#### Phase 5: Polish
+#### Phase 5: Permissions
 
-- Auto-check for updates (badge/notification, not auto-pull)
-- "Browse library" preview before subscribing
-- Library search/discovery
-- PR flow for contributors
+Library access control based on GitHub repo permissions. Determines who can publish/unpublish commands and how they're identified in the UI.
+
+##### Permission Model
+
+| GitHub level | SnipForge role | Subscription card label | Can publish/unpublish |
+|---|---|---|---|
+| Repo owner | Owner | "Owner" | Yes |
+| Admin | Curator | "Curator" | Yes |
+| Write/Maintain/Triage/Read | Consumer | — | No |
+
+More restrictive than GitHub by design — write access to a repo doesn't grant library curation rights. Only the owner and admins can publish/unpublish through the app. Consumers subscribe, sync, and use commands. If they want something added, they talk to their curator outside the app.
+
+##### Implementation
+
+- **Detection**: `GET /repos/{owner}/{repo}` returns `permissions: { admin, push, ... }`. Check on subscribe and refresh on sync.
+- **Storage**: Add `permission` column to `libraries` table (`'owner'` | `'curator'` | `'consumer'`). Owner detection via comparing authenticated user with repo owner field.
+- **UI gating**: Hide publish/unpublish buttons for consumers. Show role label on library subscription card in the Libraries tab.
+- **Graceful handling**: If someone's access is downgraded between syncs, update the stored permission and hide controls on next sync.
+
+##### Deliverables
+
+- [ ] Check permissions on subscribe, store role in `libraries` table
+- [ ] Refresh permissions on sync
+- [ ] Show role label on subscription card (Owner / Curator)
+- [ ] Hide publish/unpublish for consumers
+- [ ] Handle permission changes gracefully
