@@ -84,3 +84,12 @@ export interface BulkPublishResult {
   created?: boolean
   error?: string
 }
+
+// Auto-update types
+export interface UpdateStatus {
+  currentVersion: string
+  latestVersion: string | null
+  updateAvailable: boolean
+  releaseUrl: string          // snipforge.dev download page
+  lastChecked: string | null  // ISO timestamp
+}

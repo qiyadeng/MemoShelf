@@ -10,6 +10,7 @@ import DescriptionModal from './components/DescriptionModal.vue'
 import TagSelector from './components/TagSelector.vue'
 import DuplicateResolutionModal from './components/DuplicateResolutionModal.vue'
 import BulkPublishModal from './components/BulkPublishModal.vue'
+import UpdateBanner from './components/UpdateBanner.vue'
 import { Copy, Edit, Trash2, HelpCircle, Settings, Anvil, CirclePlus, Upload, CloudOff, PackagePlus } from 'lucide-vue-next'
 import { VList } from 'virtua/vue'
 import { extractVariables, substituteVariables, hasVariables, highlightVariables, type VariableValues } from './utils/variables'
@@ -1248,6 +1249,9 @@ const openDescriptionModal = (title: string, description: string) => {
         </template>
       </VList>
     </div>
+
+    <!-- Update Banner -->
+    <UpdateBanner />
 
     <!-- Command Modal -->
     <CommandModal

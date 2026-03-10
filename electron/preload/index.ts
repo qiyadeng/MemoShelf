@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron"
-import type { Command, Library, SyncResult, AuthStatus, GitHubUser, BulkPublishResult } from "../../shared/types"
+import type { Command, Library, SyncResult, AuthStatus, GitHubUser, BulkPublishResult, UpdateStatus } from "../../shared/types"
 //expose db methods to renderer process
 contextBridge.exposeInMainWorld('electronAPI', {
   // db methods
@@ -111,7 +111,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('library:autoSyncResult', (_, data) => callback(data))
       return () => { ipcRenderer.removeAllListeners('library:autoSyncResult') }
     },
-  }
+  },
+  // Update methods
+  update: {
+    getStatus: (): Promise<UpdateStatus & { showBanner: boolean }> =>
+      ipcRenderer.invoke('update:getStatus'),
+    check: (): Promise<UpdateStatus & { showBanner: boolean }> =>
+      ipcRenderer.invoke('update:check'),
+    dismiss: (): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('update:dismiss'),
+    remindLater: (): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('update:remindLater'),
+    onStatusChanged: (callback: (data: UpdateStatus & { showBanner: boolean }) => void) => {
+      ipcRenderer.on('update:statusChanged', (_, data) => callback(data))
+      return () => { ipcRenderer.removeAllListeners('update:statusChanged') }
+    },
+  },
 })
 // tell the compiler what's availible on the window object
 declare global {
@@ -177,6 +192,13 @@ declare global {
         onBulkPublishProgress: (callback: (data: { result: BulkPublishResult; index: number; total: number }) => void) => () => void
         exportZip: (commandIds: number[], name: string, description: string) => Promise<{ success: boolean; path?: string; commandCount?: number; error?: string }>
         onAutoSyncResult: (callback: (data: { timestamp: string; results: Array<{ libraryId: number; name: string; result: { added: number; updated: number; removed: number; errors: string[] } }> }) => void) => () => void
+      }
+      update: {
+        getStatus: () => Promise<UpdateStatus & { showBanner: boolean }>
+        check: () => Promise<UpdateStatus & { showBanner: boolean }>
+        dismiss: () => Promise<{ success: boolean }>
+        remindLater: () => Promise<{ success: boolean }>
+        onStatusChanged: (callback: (data: UpdateStatus & { showBanner: boolean }) => void) => () => void
       }
     }
   }

@@ -34,6 +34,9 @@ const DEFAULTS: Record<string, unknown> = {
   'display.tagPills': true,
   'display.previewOnCopy': true,
   'shortcuts': { ...DEFAULT_SHORTCUTS },
+  'update.autoCheck': true,
+  'update.dismissedVersion': null as string | null,
+  'update.remindAfter': null as string | null,
 }
 
 // ── CRUD ─────────────────────────────────────────────────────────

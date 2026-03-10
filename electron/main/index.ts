@@ -8,6 +8,7 @@ import * as db from './database'
 import * as github from './github'
 import * as localLibrary from './local-library'
 import * as settings from './settings'
+import * as updater from './update'
 
 // Enable remote debugging when REMOTE_DEBUG env var is set (e.g. REMOTE_DEBUG=9222)
 if (process.env.REMOTE_DEBUG) {
@@ -1015,6 +1016,15 @@ ipcMain.handle('settings:set', async (_, key: string, value: unknown) => {
       startAutoSync()
     }
 
+    // Restart/stop update checker when toggle changes
+    if (key === 'update.autoCheck') {
+      if (value) {
+        updater.startUpdateChecker()
+      } else {
+        updater.stopUpdateChecker()
+      }
+    }
+
     return { success: true }
   } catch (error) {
     console.error('Error setting:', key, error)
@@ -1024,6 +1034,26 @@ ipcMain.handle('settings:set', async (_, key: string, value: unknown) => {
 
 ipcMain.handle('settings:getAll', async () => {
   return settings.getAll()
+})
+
+// ── Update IPC handlers ───────────────────────────────────────────
+ipcMain.handle('update:getStatus', async () => {
+  return updater.getStatus()
+})
+
+ipcMain.handle('update:check', async () => {
+  const status = await updater.checkForUpdate()
+  return { ...status, showBanner: updater.shouldShowBanner() }
+})
+
+ipcMain.handle('update:dismiss', async () => {
+  updater.dismissVersion()
+  return { success: true }
+})
+
+ipcMain.handle('update:remindLater', async () => {
+  updater.remindLater()
+  return { success: true }
 })
 
 // IPC handlers for window controls
@@ -1066,6 +1096,8 @@ app.whenReady().then(() => {
   createWindow()
   createTray()
   startAutoSync() // Start if library.autoSync is enabled
+  updater.setWindow(win)
+  updater.startUpdateChecker()
 })
 
 app.on('window-all-closed', () => {
@@ -1076,13 +1108,14 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
   stopAutoSync()
+  updater.stopUpdateChecker()
   globalShortcut.unregisterAll()
   db.closeDatabase()
   if (tray) {
     tray.destroy()
     tray = null
   }
-  console.log('Cleanup complete: auto-sync, shortcuts, database, tray')
+  console.log('Cleanup complete: auto-sync, update-checker, shortcuts, database, tray')
 })
 
 app.on('before-quit', () => {

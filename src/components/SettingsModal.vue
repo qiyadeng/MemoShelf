@@ -40,6 +40,43 @@
 
         <!-- Tab 1: General -->
         <div v-if="activeTab === 'general'" class="general-tab">
+          <!-- Updates -->
+          <div class="settings-section">
+            <h3>Updates</h3>
+            <div class="update-compact-row">
+              <div class="update-left">
+                <span class="update-version">v{{ updateStatus.currentVersion || '...' }}</span>
+                <span v-if="updateStatus.updateAvailable" class="update-available">
+                  — v{{ updateStatus.latestVersion }} available
+                </span>
+                <span v-else-if="updateStatus.lastChecked" class="update-up-to-date">
+                  — up to date
+                </span>
+              </div>
+              <button
+                class="update-check-btn"
+                @click="manualCheckForUpdate"
+                :disabled="updateChecking"
+              >
+                {{ updateChecking ? 'Checking...' : 'Check for updates' }}
+              </button>
+            </div>
+            <div class="toggle-row">
+              <div class="toggle-label">
+                <span class="toggle-title">Check automatically</span>
+              </div>
+              <button
+                class="toggle-switch"
+                :class="{ on: settings['update.autoCheck'] !== false }"
+                @click="updateSetting('update.autoCheck', settings['update.autoCheck'] === false)"
+                role="switch"
+                :aria-checked="settings['update.autoCheck'] !== false"
+              >
+                <span class="toggle-knob" />
+              </button>
+            </div>
+          </div>
+
           <div class="settings-section">
             <h3>Global Hotkey</h3>
             <p class="section-description">
@@ -100,7 +137,7 @@
           </div>
 
           <!-- Keyboard Shortcuts -->
-          <div class="settings-section" style="border-bottom: none;">
+          <div class="settings-section">
             <h3>Keyboard Shortcuts</h3>
             <p class="section-description">
               Click a shortcut to rebind it. Press Escape to cancel.
@@ -139,6 +176,7 @@
               </button>
             </div>
           </div>
+
         </div>
 
         <!-- Tab 2: Connectors -->
@@ -600,7 +638,7 @@ import { getInlineSuggestion } from '../utils/autocomplete'
 import { useSettings } from '../composables/useSettings'
 import CommandList from './CommandList.vue'
 import TagSelector from './TagSelector.vue'
-import type { Library, AuthStatus } from '../../shared/types'
+import type { Library, AuthStatus, UpdateStatus } from '../../shared/types'
 
 // Props
 interface Props {
@@ -638,6 +676,36 @@ const activeTab = ref<Tab>('general')
 
 // ── Settings ───────────────────────────────────────────────────
 const { settings, updateSetting, loaded: settingsLoaded } = useSettings()
+
+// ── Update Status ───────────────────────────────────────────────
+type StatusWithBanner = UpdateStatus & { showBanner: boolean }
+const updateStatus = ref<StatusWithBanner>({
+  currentVersion: '',
+  latestVersion: null,
+  updateAvailable: false,
+  releaseUrl: 'https://snipforge.dev',
+  lastChecked: null,
+  showBanner: false,
+})
+const updateChecking = ref(false)
+
+async function loadUpdateStatus() {
+  try {
+    updateStatus.value = await (window.electronAPI as any).update.getStatus()
+  } catch (e) {
+    console.warn('[Settings] Failed to get update status:', e)
+  }
+}
+
+async function manualCheckForUpdate() {
+  updateChecking.value = true
+  try {
+    updateStatus.value = await (window.electronAPI as any).update.check()
+  } catch (e) {
+    console.warn('[Settings] Manual check failed:', e)
+  }
+  updateChecking.value = false
+}
 
 // ── Hotkey Picker State ────────────────────────────────────────
 const currentHotkey = ref('CommandOrControl+Shift+Space')
@@ -982,6 +1050,7 @@ function startLastSyncedRefresh() {
 onMounted(() => {
   setupAutoSyncListener()
   startLastSyncedRefresh()
+  loadUpdateStatus()
 })
 
 onUnmounted(() => {
@@ -3550,6 +3619,57 @@ const handleExportAsLibrary = () => {
 }
 
 .init-modal-confirm:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Updates Section ────────────────────────────────────────── */
+.update-compact-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.update-left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.update-version {
+  color: var(--text-secondary);
+}
+
+.update-available {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.update-up-to-date {
+  color: var(--text-muted);
+}
+
+.update-check-btn {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.update-check-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-hover);
+  color: var(--text-primary);
+}
+
+.update-check-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
