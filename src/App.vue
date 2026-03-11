@@ -136,10 +136,17 @@ const publishing = ref(false)
 const unpublishing = ref(false)
 const showBulkPublishModal = ref(false)
 
-// Initialized libraries (can publish to these)
+// Initialized libraries (can publish to these — owner or curator only)
 const initializedLibraries = computed(() => {
   return Array.from(libraries.value.values()).filter(lib => lib.manifest_path)
 })
+const publishableLibraries = computed(() => {
+  return initializedLibraries.value.filter(lib => lib.permission === 'owner' || lib.permission === 'curator')
+})
+const canUnpublish = (libraryId: number): boolean => {
+  const lib = libraries.value.get(libraryId)
+  return !!(lib?.manifest_path && (lib.permission === 'owner' || lib.permission === 'curator'))
+}
 
 // Notification state
 const notificationMessage = ref('')
@@ -775,7 +782,7 @@ const deleteCommand = async (id: number) => {
   }
   // Publish command to a library
   const startPublish = (commandId: number) => {
-    const libs = initializedLibraries.value
+    const libs = publishableLibraries.value
     if (libs.length === 0) {
       showNotificationToast('No initialized libraries — subscribe and init a library first')
       return
@@ -1002,7 +1009,7 @@ const handleKeyboard = (event: KeyboardEvent) => {
     showModal.value = true
   } else if (matchAction(event, 'action.bulkPublish')) {
     event.preventDefault()
-    if (initializedLibraries.value.length > 0) showBulkPublishModal.value = true
+    if (publishableLibraries.value.length > 0) showBulkPublishModal.value = true
   } else if (matchAction(event, 'action.publish')) {
     event.preventDefault()
     const selectedCommand = filteredCommands.value.find(cmd => cmd.id === selectedCommandId.value)
@@ -1010,7 +1017,7 @@ const handleKeyboard = (event: KeyboardEvent) => {
   } else if (matchAction(event, 'action.unpublish')) {
     event.preventDefault()
     const selectedCommand = filteredCommands.value.find(cmd => cmd.id === selectedCommandId.value)
-    if (selectedCommand && selectedCommand.source === 'remote') startUnpublish(selectedCommand.id)
+    if (selectedCommand && selectedCommand.source === 'remote' && selectedCommand.library_id && canUnpublish(selectedCommand.library_id)) startUnpublish(selectedCommand.id)
   } else if (matchAction(event, 'action.delete')) {
     event.preventDefault()
     const selectedCommand = filteredCommands.value.find(cmd => cmd.id === selectedCommandId.value)
@@ -1131,7 +1138,7 @@ const openDescriptionModal = (title: string, description: string) => {
           <CirclePlus :size="18" />
         </button>
         <button
-          v-if="initializedLibraries.length > 0"
+          v-if="publishableLibraries.length > 0"
           class="bulk-publish-button"
           @click="showBulkPublishModal = true"
           title="Bulk publish (Shift+P)"
@@ -1222,7 +1229,7 @@ const openDescriptionModal = (title: string, description: string) => {
                 <Copy :size="16" />
               </button>
               <button
-                v-if="initializedLibraries.length > 0 && command.source !== 'remote'"
+                v-if="publishableLibraries.length > 0 && command.source !== 'remote'"
                 @click.stop="startPublish(command.id)"
                 tabindex="-1"
                 title="Publish to library"
@@ -1231,7 +1238,7 @@ const openDescriptionModal = (title: string, description: string) => {
                 <Upload :size="16" />
               </button>
               <button
-                v-if="command.source === 'remote' && command.library_id && command.remote_path && libraries.get(command.library_id)?.manifest_path"
+                v-if="command.source === 'remote' && command.library_id && command.remote_path && canUnpublish(command.library_id)"
                 @click.stop="startUnpublish(command.id)"
                 tabindex="-1"
                 title="Remove from library"
@@ -1314,7 +1321,7 @@ const openDescriptionModal = (title: string, description: string) => {
         <p class="publish-description">Choose a library to publish this command to:</p>
         <div class="publish-library-list">
           <button
-            v-for="lib in initializedLibraries"
+            v-for="lib in publishableLibraries"
             :key="lib.id"
             class="publish-library-option"
             @click="doPublish(lib.id, publishTargetCommandId!)"
@@ -1331,7 +1338,7 @@ const openDescriptionModal = (title: string, description: string) => {
     <BulkPublishModal
       :show="showBulkPublishModal"
       :commands="commands"
-      :libraries="initializedLibraries"
+      :libraries="publishableLibraries"
       @cancel="showBulkPublishModal = false"
       @done="showBulkPublishModal = false; loadCommands()"
     />

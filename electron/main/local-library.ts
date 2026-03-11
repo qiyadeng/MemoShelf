@@ -210,7 +210,7 @@ export async function openLocalFolder(folderPath: string): Promise<{ library: Li
     if (scanResult) {
         const { manifest, manifestPath, commands } = scanResult
         const sha = computeContentHash(commands)
-        const libraryId = db.addLibrary(folderPath, manifest.name, manifest.description || '', manifestPath, 'local')
+        const libraryId = db.addLibrary(folderPath, manifest.name, manifest.description || '', manifestPath, 'local', 'owner')
 
         const localBodies = db.getLocalCommandBodies()
         const toAdd = commands
@@ -236,7 +236,7 @@ export async function openLocalFolder(folderPath: string): Promise<{ library: Li
         const folderName = path.basename(folderPath)
             .replace(/[-_]/g, ' ')
             .replace(/\b\w/g, c => c.toUpperCase())
-        db.addLibrary(folderPath, folderName, '', undefined, 'local')
+        db.addLibrary(folderPath, folderName, '', undefined, 'local', 'owner')
         const library = db.getLibraryByRepo(folderPath)!
         return { library, syncResult: { added: 0, updated: 0, removed: 0, errors: [] } }
     }

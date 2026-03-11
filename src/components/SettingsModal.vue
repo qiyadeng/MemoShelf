@@ -350,6 +350,11 @@
                       </svg>
                       {{ lib.name }}
                     </span>
+                    <span
+                      v-if="lib.type === 'github' && (lib.permission === 'owner' || lib.permission === 'curator')"
+                      class="library-role-badge"
+                      :class="lib.permission"
+                    >{{ lib.permission === 'owner' ? 'Owner' : 'Curator' }}</span>
                     <button
                       v-if="lib.manifest_path"
                       class="toggle-switch toggle-switch--small"
@@ -2898,6 +2903,26 @@ const handleExportAsLibrary = () => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.library-role-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
+}
+
+.library-role-badge.owner {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent);
+}
+
+.library-role-badge.curator {
+  background: color-mix(in srgb, #3b82f6 20%, transparent);
+  color: #6ba3f7;
 }
 
 .toggle-switch {

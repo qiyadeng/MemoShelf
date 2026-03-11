@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import path from "node:path";
 import { app } from "electron";
-import type { Command, Library, LibraryType, SyncResult } from "../../shared/types";
+import type { Command, Library, LibraryType, LibraryPermission, SyncResult } from "../../shared/types";
 
 export type { Command, Library }
 // Initialize and export the database connection
@@ -116,6 +116,12 @@ try {
     try {
         db.exec(`ALTER TABLE libraries ADD COLUMN auto_sync INTEGER NOT NULL DEFAULT 0`)
         console.log('Added auto_sync column to libraries')
+    } catch { /* already exists */ }
+
+    // Library permission role (owner/curator/consumer)
+    try {
+        db.exec(`ALTER TABLE libraries ADD COLUMN permission TEXT NOT NULL DEFAULT 'consumer'`)
+        console.log('Added permission column to libraries')
     } catch { /* already exists */ }
 
     // Index for fast remote command lookups
@@ -237,13 +243,13 @@ export function getLibraryByRepo(githubRepo: string): Library | undefined {
     return db.prepare("SELECT * FROM libraries WHERE github_repo = ?").get(githubRepo) as Library | undefined
 }
 
-export function addLibrary(githubRepo: string, name: string, description: string, manifestPath?: string, type: LibraryType = 'github'): number {
+export function addLibrary(githubRepo: string, name: string, description: string, manifestPath?: string, type: LibraryType = 'github', permission: LibraryPermission = 'consumer'): number {
     if (!db) throw new Error("Database not initialized")
     const now = new Date().toISOString()
     const result = db.prepare(`
-        INSERT INTO libraries (github_repo, name, description, manifest_path, type, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-    `).run(githubRepo, name, description, manifestPath ?? null, type, now)
+        INSERT INTO libraries (github_repo, name, description, manifest_path, type, permission, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(githubRepo, name, description, manifestPath ?? null, type, permission, now)
     return result.lastInsertRowid as number
 }
 
@@ -267,6 +273,11 @@ export function clearLibraryManifest(libraryId: number): void {
     db.prepare(`
         UPDATE libraries SET manifest_path = NULL, last_synced_sha = NULL WHERE id = ?
     `).run(libraryId)
+}
+
+export function updateLibraryPermission(libraryId: number, permission: LibraryPermission): void {
+    if (!db) throw new Error("Database not initialized")
+    db.prepare("UPDATE libraries SET permission = ? WHERE id = ?").run(permission, libraryId)
 }
 
 export function setLibraryAutoSync(libraryId: number, enabled: boolean): void {

@@ -1,6 +1,6 @@
 import { safeStorage } from 'electron'
 import * as db from './database'
-import type { GitHubUser, LibraryManifest, RemoteCommand, SyncResult, Library, BulkPublishResult } from '../../shared/types'
+import type { GitHubUser, LibraryManifest, LibraryPermission, RemoteCommand, SyncResult, Library, BulkPublishResult } from '../../shared/types'
 
 // ── Configuration ─────────────────────────────────────────────────
 // GitHub OAuth App client_id (public — safe to embed, no secret needed)
@@ -230,6 +230,22 @@ async function getRepoDefaultBranch(owner: string, repo: string): Promise<string
     return data.default_branch || 'main'
 }
 
+export async function detectPermission(owner: string, repo: string): Promise<LibraryPermission> {
+    const res = await githubFetch(`/repos/${owner}/${repo}`)
+    if (!res.ok) return 'consumer'
+    const data = await res.json()
+
+    // Check if the authenticated user is the repo owner
+    const user = await getAuthenticatedUser()
+    if (user && data.owner?.login === user.login) return 'owner'
+
+    // Admin access → curator
+    if (data.permissions?.admin) return 'curator'
+
+    // Everything else (write/maintain/triage/read) → consumer
+    return 'consumer'
+}
+
 async function getLatestCommitSha(owner: string, repo: string, branch: string): Promise<string> {
     const res = await githubFetch(`/repos/${owner}/${repo}/commits/${branch}`)
     if (!res.ok) throw new Error(`Failed to get latest commit: ${res.status}`)
@@ -333,6 +349,9 @@ export async function subscribeToLibrary(repoUrl: string): Promise<{ library: Li
     // Validate the repo exists (will throw if not found / no access)
     await getRepoDefaultBranch(owner, repo)
 
+    // Detect permission level for this repo
+    const permission = await detectPermission(owner, repo)
+
     // Try to browse — if no manifest, subscribe anyway (user can init later)
     let browseResult: Awaited<ReturnType<typeof browseLibrary>> | null = null
     try {
@@ -349,7 +368,7 @@ export async function subscribeToLibrary(repoUrl: string): Promise<{ library: Li
         const branch = await getRepoDefaultBranch(owner, repo)
         const sha = await getLatestCommitSha(owner, repo, branch)
 
-        const libraryId = db.addLibrary(githubRepo, manifest.name, manifest.description, manifestPath)
+        const libraryId = db.addLibrary(githubRepo, manifest.name, manifest.description, manifestPath, 'github', permission)
 
         const localBodies = db.getLocalCommandBodies()
         const toAdd = commands
@@ -373,7 +392,7 @@ export async function subscribeToLibrary(repoUrl: string): Promise<{ library: Li
     } else {
         // No manifest — create library record as uninitialized
         const repoName = repo.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-        db.addLibrary(githubRepo, repoName, '')
+        db.addLibrary(githubRepo, repoName, '', undefined, 'github', permission)
         const library = db.getLibraryByRepo(githubRepo)!
         return { library, syncResult: { added: 0, updated: 0, removed: 0, errors: [] } }
     }
@@ -392,6 +411,12 @@ export async function syncLibrary(libraryId: number, force = false): Promise<Syn
     const { owner, repo } = parseRepoUrl(library.github_repo)
     const branch = await getRepoDefaultBranch(owner, repo)
     const sha = await getLatestCommitSha(owner, repo, branch)
+
+    // Refresh permissions on every sync
+    const permission = await detectPermission(owner, repo)
+    if (permission !== library.permission) {
+        db.updateLibraryPermission(libraryId, permission)
+    }
 
     // Skip if nothing changed (unless force-syncing, e.g. user clicked Sync)
     if (!force && library.last_synced_sha === sha) {

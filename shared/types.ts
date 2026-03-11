@@ -23,6 +23,8 @@ export type CommandSource = 'local' | 'remote'
 
 export type LibraryType = 'github' | 'local'
 
+export type LibraryPermission = 'owner' | 'curator' | 'consumer'
+
 export interface Library {
   id: number
   github_repo: string       // "org/repo-name" for GitHub, absolute path for local
@@ -33,6 +35,7 @@ export interface Library {
   last_synced_at: string | null
   last_synced_sha: string | null
   auto_sync: number             // 0 = off, 1 = on (SQLite integer boolean)
+  permission: LibraryPermission // 'owner' | 'curator' | 'consumer'
   created_at: string
 }
 

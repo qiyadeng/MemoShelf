@@ -536,8 +536,25 @@ More restrictive than GitHub by design — write access to a repo doesn't grant 
 
 ##### Deliverables
 
-- [ ] Check permissions on subscribe, store role in `libraries` table
-- [ ] Refresh permissions on sync
-- [ ] Show role label on subscription card (Owner / Curator)
-- [ ] Hide publish/unpublish for consumers
-- [ ] Handle permission changes gracefully
+- [x] Check permissions on subscribe, store role in `libraries` table
+- [x] Refresh permissions on sync
+- [x] Show role label on subscription card (Owner / Curator)
+- [x] Hide publish/unpublish for consumers
+- [x] Handle permission changes gracefully
+
+##### Implementation Notes
+
+Key changes:
+- `shared/types.ts`: new `LibraryPermission = 'owner' | 'curator' | 'consumer'` type, added `permission` field to `Library`
+- `database.ts`: migration adds `permission TEXT NOT NULL DEFAULT 'consumer'` column, new `updateLibraryPermission()` function, `addLibrary()` accepts permission parameter
+- `github.ts`: new `detectPermission(owner, repo)` — calls `GET /repos/{owner}/{repo}`, compares authenticated user with repo owner (→ `'owner'`), checks `permissions.admin` (→ `'curator'`), else `'consumer'`. Called on subscribe and refreshed on every sync.
+- Local libraries always get `'owner'` permission (you own the folder).
+- `App.vue`: new `publishableLibraries` computed filters `initializedLibraries` to owner/curator only. All publish/unpublish UI (buttons, bulk publish, keyboard shortcuts) gates on this. New `canUnpublish(libraryId)` helper for per-command unpublish button visibility.
+- `SettingsModal.vue`: role badge (Owner/Curator) shown on GitHub library cards next to the name. Orange badge for owner, blue for curator.
+
+**Verification:**
+1. Subscribe to a repo you own → "Owner" badge appears, publish/unpublish buttons visible
+2. Subscribe to a repo where you have admin access → "Curator" badge, publish/unpublish visible
+3. Subscribe to a repo with read/write access only → no badge, publish/unpublish buttons hidden
+4. Sync a library after permission change → role updates, controls adjust
+5. Keyboard shortcuts (p, u, Shift+P) only work when user has publish rights

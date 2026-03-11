@@ -1,9 +1,9 @@
 <template>
   <div v-if="show" class="modal-overlay" @click.self="handleClose">
-    <div class="modal-content bulk-publish-modal">
+    <div class="modal-content bulk-publish-modal" @click="closeFilterDropdown">
       <div class="modal-header">
         <h2>Bulk Publish</h2>
-        <button class="close-button" @click="handleClose" :disabled="isPublishing">×</button>
+        <button class="close-button" @click="handleClose" :disabled="isPublishing">&times;</button>
       </div>
 
       <div class="modal-body">
@@ -21,44 +21,83 @@
           <div class="bp-library-single">{{ libraries[0].name }} ({{ libraries[0].github_repo }})</div>
         </div>
 
-        <!-- Select all / count -->
-        <div class="bp-selection-bar">
-          <label class="bp-select-all">
-            <input
-              type="checkbox"
-              :checked="allSelected"
-              :indeterminate="someSelected && !allSelected"
-              @change="toggleSelectAll"
-              :disabled="isPublishing"
-            />
-            <span v-if="selectedCount === 0">Select all ({{ localCommands.length }})</span>
-            <span v-else>{{ selectedCount }} of {{ localCommands.length }} selected</span>
-          </label>
+        <!-- Controls row (matches Manage Commands) -->
+        <div class="management-controls">
+          <div class="controls-row">
+            <div class="bulk-selection">
+              <input
+                type="checkbox"
+                class="select-all-checkbox"
+                :checked="allSelected"
+                :indeterminate="someSelected && !allSelected"
+                @change="toggleSelectAll"
+                :disabled="isPublishing"
+              />
+              <span class="selection-counter" :class="{ muted: selectedCount === 0 }">
+                {{ selectedCount }} selected
+              </span>
+              <button
+                @click.stop="toggleFilterDropdown"
+                :class="['management-filter-button', { active: selectedFilterTags.length > 0 }]"
+                title="Filter by tags"
+                :disabled="isPublishing"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="22,3 2,3 10,12.46 10,19 14,21 14,12.46"></polygon>
+                </svg>
+              </button>
+
+              <!-- Filter dropdown -->
+              <div v-if="showFilterDropdown" class="filter-dropdown" @click.stop>
+                <TagSelector
+                  :available-tags="availableTags"
+                  :selected-tags="selectedFilterTags"
+                  title="Filter by Tags"
+                  @toggle="toggleFilterTag"
+                  @clear-all="clearFilterTags"
+                />
+              </div>
+            </div>
+
+            <div class="spacer"></div>
+
+            <div class="action-buttons">
+              <button class="bp-cancel" @click="handleClose" :disabled="isPublishing">
+                {{ isDone ? 'Close' : 'Cancel' }}
+              </button>
+              <button
+                v-if="!isDone"
+                class="bp-publish-btn"
+                @click="startPublish"
+                :disabled="selectedCount === 0 || isPublishing || !selectedLibraryId"
+              >
+                {{ isPublishing ? 'Publishing...' : 'Publish' }}
+              </button>
+            </div>
+          </div>
         </div>
 
-        <!-- Command list -->
-        <div class="bp-command-list">
-          <label
-            v-for="cmd in localCommands"
-            :key="cmd.id"
-            class="bp-command-item"
-            :class="{ 'bp-published': getResult(cmd.id)?.success, 'bp-failed': getResult(cmd.id)?.success === false }"
+        <!-- Command list (reuses CommandList component) -->
+        <div v-if="!isDone" class="command-list-container">
+          <CommandList
+            :commands="filteredLocalCommands"
+            :selected-ids="selectedIdsArray"
+            @toggle="toggleCommand"
+            :empty-message="emptyMessage"
+          />
+        </div>
+
+        <!-- Results list (shown after publish) -->
+        <div v-if="isDone" class="bp-results-list">
+          <div
+            v-for="r in results"
+            :key="r.commandId"
+            class="bp-result-item"
+            :class="{ 'bp-published': r.success, 'bp-failed': !r.success }"
           >
-            <input
-              type="checkbox"
-              :checked="selectedIds.has(cmd.id)"
-              @change="toggleCommand(cmd.id)"
-              :disabled="isPublishing"
-            />
-            <div class="bp-command-info">
-              <span class="bp-command-title">{{ cmd.title }}</span>
-              <span class="bp-command-body">{{ cmd.body.substring(0, 80) }}{{ cmd.body.length > 80 ? '...' : '' }}</span>
-            </div>
-            <span v-if="getResult(cmd.id)?.success" class="bp-status bp-status-ok">Done</span>
-            <span v-else-if="getResult(cmd.id)?.success === false" class="bp-status bp-status-err" :title="getResult(cmd.id)?.error">Failed</span>
-          </label>
-          <div v-if="localCommands.length === 0" class="bp-empty">
-            No local commands to publish.
+            <span class="bp-result-title">{{ r.title }}</span>
+            <span v-if="r.success" class="bp-status bp-status-ok">Done</span>
+            <span v-else class="bp-status bp-status-err" :title="r.error">Failed</span>
           </div>
         </div>
 
@@ -77,19 +116,6 @@
         </div>
       </div>
 
-      <div class="modal-footer">
-        <button class="bp-cancel" @click="handleClose" :disabled="isPublishing">
-          {{ isDone ? 'Close' : 'Cancel' }}
-        </button>
-        <button
-          v-if="!isDone"
-          class="bp-publish-btn"
-          @click="startPublish"
-          :disabled="selectedCount === 0 || isPublishing || !selectedLibraryId"
-        >
-          {{ isPublishing ? 'Publishing...' : `Publish ${selectedCount} command${selectedCount !== 1 ? 's' : ''}` }}
-        </button>
-      </div>
     </div>
   </div>
 </template>
@@ -97,6 +123,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onUnmounted } from 'vue'
 import type { Library, CommandWithTags, BulkPublishResult } from '../../shared/types'
+import CommandList from './CommandList.vue'
+import TagSelector from './TagSelector.vue'
 
 interface Props {
   show: boolean
@@ -119,14 +147,49 @@ const results = ref<BulkPublishResult[]>([])
 const progressCurrent = ref(0)
 const progressTotal = ref(0)
 
+// Tag filter state
+const selectedFilterTags = ref<string[]>([])
+const showFilterDropdown = ref(false)
+
 // Only show local commands
 const localCommands = computed(() =>
   props.commands.filter(c => c.source === 'local')
 )
 
+// Available tags from local commands
+const availableTags = computed(() => {
+  const tags = new Set<string>()
+  localCommands.value.forEach(cmd => {
+    cmd.tagsArray.forEach(tag => {
+      if (tag.trim()) tags.add(tag.trim())
+    })
+  })
+  return Array.from(tags).sort()
+})
+
+// Filtered by selected tags (OR logic, matching Manage Commands)
+const filteredLocalCommands = computed(() => {
+  if (selectedFilterTags.value.length === 0) return localCommands.value
+
+  return localCommands.value.filter(cmd =>
+    selectedFilterTags.value.some(selectedTag =>
+      cmd.tagsNormalized.some(cmdTag =>
+        cmdTag.includes(selectedTag.toLowerCase())
+      )
+    )
+  )
+})
+
+const emptyMessage = computed(() => {
+  if (selectedFilterTags.value.length > 0) return 'No commands match the selected tags'
+  return 'No local commands to publish.'
+})
+
+// Selection (array for CommandList, Set for internal tracking)
+const selectedIdsArray = computed(() => Array.from(selectedIds.value))
 const selectedCount = computed(() => selectedIds.value.size)
 const allSelected = computed(() =>
-  localCommands.value.length > 0 && selectedIds.value.size === localCommands.value.length
+  filteredLocalCommands.value.length > 0 && selectedIds.value.size === filteredLocalCommands.value.length
 )
 const someSelected = computed(() => selectedIds.value.size > 0)
 
@@ -136,10 +199,6 @@ const progressPercent = computed(() =>
 
 const succeededCount = computed(() => results.value.filter(r => r.success).length)
 const failedCount = computed(() => results.value.filter(r => !r.success).length)
-
-function getResult(commandId: number): BulkPublishResult | undefined {
-  return results.value.find(r => r.commandId === commandId)
-}
 
 function toggleCommand(id: number) {
   const next = new Set(selectedIds.value)
@@ -155,8 +214,30 @@ function toggleSelectAll() {
   if (allSelected.value) {
     selectedIds.value = new Set()
   } else {
-    selectedIds.value = new Set(localCommands.value.map(c => c.id))
+    selectedIds.value = new Set(filteredLocalCommands.value.map(c => c.id))
   }
+}
+
+// Tag filter controls
+function toggleFilterDropdown() {
+  showFilterDropdown.value = !showFilterDropdown.value
+}
+
+function closeFilterDropdown() {
+  showFilterDropdown.value = false
+}
+
+function toggleFilterTag(tag: string) {
+  const index = selectedFilterTags.value.indexOf(tag)
+  if (index === -1) {
+    selectedFilterTags.value.push(tag)
+  } else {
+    selectedFilterTags.value.splice(index, 1)
+  }
+}
+
+function clearFilterTags() {
+  selectedFilterTags.value = []
 }
 
 // Auto-select library if only one
@@ -172,6 +253,8 @@ watch(() => props.libraries, (libs) => {
 watch(() => props.show, (visible) => {
   if (visible) {
     selectedIds.value = new Set()
+    selectedFilterTags.value = []
+    showFilterDropdown.value = false
     isPublishing.value = false
     isDone.value = false
     results.value = []
@@ -237,10 +320,11 @@ function handleClose() {
 
 <style scoped>
 .bulk-publish-modal {
-  max-width: 520px;
+  max-width: 560px;
   width: 90vw;
 }
 
+/* Library picker */
 .bp-library-picker {
   margin-bottom: 12px;
 }
@@ -288,76 +372,173 @@ function handleClose() {
   font-size: 13px;
 }
 
-.bp-selection-bar {
-  margin-bottom: 8px;
-  padding-bottom: 8px;
+/* Controls row — matches Manage Commands tab */
+.management-controls {
+  padding-bottom: 12px;
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  margin-bottom: 0;
 }
 
-.bp-select-all {
+.controls-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.bulk-selection {
   display: flex;
   align-items: center;
   gap: 8px;
+  position: relative;
+  padding-left: 17px;
+}
+
+.select-all-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg-surface);
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.select-all-checkbox:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.select-all-checkbox:checked::after {
+  content: '';
+  position: absolute;
+  left: 4.5px;
+  top: 1.5px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--bg-app);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.select-all-checkbox:indeterminate {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.select-all-checkbox:indeterminate::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 6px;
+  width: 7px;
+  height: 0;
+  border: solid var(--bg-app);
+  border-width: 0 0 2px 0;
+}
+
+.select-all-checkbox:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.selection-counter {
   font-size: 13px;
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
+}
+
+.selection-counter.muted {
+  color: var(--text-placeholder);
+}
+
+.management-filter-button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  color: var(--text-placeholder);
   cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.bp-select-all input[type="checkbox"] {
-  accent-color: var(--accent);
+.management-filter-button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
-.bp-command-list {
-  max-height: 300px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.management-filter-button:focus-visible {
+  outline: none;
+  border-color: var(--accent);
 }
 
-.bp-command-item {
+.management-filter-button.active {
+  background: var(--accent);
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+.management-filter-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.filter-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: var(--z-dropdown);
+  width: 200px;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.action-buttons {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: background 0.1s;
-}
-
-.bp-command-item:hover {
-  background: var(--bg-hover);
-}
-
-.bp-command-item input[type="checkbox"] {
-  accent-color: var(--accent);
   flex-shrink: 0;
 }
 
-.bp-command-info {
-  flex: 1;
-  min-width: 0;
+/* Command list container */
+.command-list-container {
+  height: 320px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
 }
 
-.bp-command-title {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* Results list (post-publish) */
+.bp-results-list {
+  max-height: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
 }
 
-.bp-command-body {
-  font-size: 11px;
-  color: var(--text-tertiary);
-  font-family: 'SF Mono', 'Fira Code', monospace;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.bp-result-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.bp-result-item:last-child {
+  border-bottom: none;
 }
 
 .bp-published {
@@ -368,12 +549,24 @@ function handleClose() {
   background: rgba(239, 68, 68, 0.06);
 }
 
+.bp-result-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
 .bp-status {
   font-size: 11px;
   font-weight: 500;
   flex-shrink: 0;
   padding: 2px 6px;
   border-radius: 4px;
+  margin-left: 8px;
 }
 
 .bp-status-ok {
@@ -386,6 +579,7 @@ function handleClose() {
   background: rgba(239, 68, 68, 0.12);
 }
 
+/* Progress */
 .bp-progress {
   margin-top: 12px;
   display: flex;
@@ -414,6 +608,7 @@ function handleClose() {
   flex-shrink: 0;
 }
 
+/* Summary */
 .bp-summary {
   margin-top: 12px;
   display: flex;
@@ -430,13 +625,7 @@ function handleClose() {
   color: #ef4444;
 }
 
-.bp-empty {
-  padding: 24px;
-  text-align: center;
-  color: var(--text-tertiary);
-  font-size: 13px;
-}
-
+/* Footer buttons */
 .bp-cancel {
   padding: 8px 16px;
   background: none;

@@ -52,6 +52,8 @@ Tracks remote library subscriptions.
 | `manifest_path` | TEXT | NULL | Path to `.snipforge.json` in the repo (NULL = not initialized) |
 | `last_synced_at` | TEXT | NULL | ISO 8601 timestamp of last successful sync |
 | `last_synced_sha` | TEXT | NULL | Git commit SHA for change detection (skip sync if unchanged) |
+| `auto_sync` | INTEGER | `0` | Per-library auto-sync toggle (0 = off, 1 = on) |
+| `permission` | TEXT | `'consumer'` | User's role: `'owner'`, `'curator'`, or `'consumer'` |
 | `created_at` | TEXT | NOT NULL | ISO 8601 timestamp |
 
 ### auth
@@ -74,6 +76,9 @@ Migrations are inline in `database.ts:initializeDatabase()`. Each uses a try/cat
 2. `language` column on `commands` (v2 → v3)
 3. `source`, `library_id`, `remote_path` columns on `commands` + `libraries` table + `auth` table (v3 → v4, Phase 1 Remote Libraries)
 4. `manifest_path` column on `libraries` (v4 → v5, Phase 3 Publishing)
+5. `type` column on `libraries` (v5 → v6, Phase 4 Local Libraries)
+6. `auto_sync` column on `libraries` (v6 → v7, Settings Phase 2)
+7. `permission` column on `libraries` (v7 → v8, Phase 5 Permissions)
 
 When adding new columns, follow the same pattern: `ALTER TABLE ... ADD COLUMN` wrapped in try/catch, placed after the existing migrations in `initializeDatabase()`.
 
