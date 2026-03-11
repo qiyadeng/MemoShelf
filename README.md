@@ -1,52 +1,104 @@
-# SnipForge
+<p align="center">
+  <img src="app-icon.png" width="120" alt="SnipForge icon">
+</p>
 
-A desktop app for saving, searching, and managing command snippets. Built for engineers who want a searchable, hotkey-triggered command palette with variable substitution — think "runbooks that live on your desktop."
+<h1 align="center">SnipForge</h1>
 
-Teams use SnipForge to share command libraries via GitHub repos. New members see the app, subscribe to the team library, and have every command at their fingertips.
+<p align="center">
+  <strong>Your commands, one hotkey away.</strong><br>
+  A blazing fast snippet palette that lives on your desktop.<br>
+  Save commands, code blocks, prompts, and templates. Search instantly, copy with variables.
+</p>
+
+<p align="center">
+  <a href="https://snipforge.dev">Website</a> &bull;
+  <a href="https://github.com/ArtluxDM/SnipForge/releases/latest">Download</a> &bull;
+  <a href="https://github.com/sponsors/ArtluxDM">Sponsor</a>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/command-palette.png" width="720" alt="SnipForge command palette">
+</p>
+
+## Why SnipForge
+
+You have hundreds of commands across Docker, Kubernetes, Git, SSH, APIs, and internal tooling. Some live in Notion, some in Slack messages, some you just google every time. SnipForge puts them all in one place — a global hotkey palette that opens from anywhere, searches instantly, and copies to your clipboard with variable substitution.
+
+Teams use it to share command libraries via GitHub repos. New members subscribe to the team library and have every command at their fingertips.
 
 ## Features
 
-### Editors
-- **Plain Text** — simple text input
-- **Rich Text** — WYSIWYG with formatting, lists, task lists, and links (TipTap)
-- **Markdown** — syntax-highlighted editor with toolbar (CodeMirror 6)
-- **Code** — syntax highlighting for 15+ languages (JavaScript, TypeScript, Python, Go, Rust, Java, HTML, CSS, YAML, JSON, SQL, Bash, PHP, XML, and more)
+**Global hotkey** — One shortcut opens SnipForge from any app. Type to search, arrow keys to navigate, Enter to copy. Configurable in settings.
 
-### Core
-- **Global Hotkey** — `Cmd+Shift+Space` (macOS) / `Ctrl+Shift+Space` (Windows/Linux) opens SnipForge from anywhere
-- **Fuzzy Search** — real-time weighted search across title, tags, description, and body
-- **Variables** — `{{variable name}}` template syntax with user prompts on copy
-- **Tag System** — organize with tags, filter with tag selectors, autocomplete with Tab
-- **Clipboard** — one-click copy with multi-format support (plain text + HTML for rich text and code)
-- **Keyboard-Driven** — full navigation without touching the mouse
+**Variables** — Use `{{variable name}}` templates. When you copy, SnipForge prompts you to fill in each value before it hits your clipboard.
 
-### Team Sharing
-- **Remote Libraries** — subscribe to GitHub repos containing shared command snippets
-- **One-Way Sync** — curators publish, members pull. No merge conflicts
-- **Multi-Repo** — subscribe to multiple libraries simultaneously (e.g., `k8s-team`, `support-tools`)
-- **Local Commands Stay Private** — remote commands are tagged with their source, never mixed
+```bash
+ssh {{username}}@{{server}}
+kubectl get pods -n {{namespace}}
+docker exec -it {{container}} bash
+```
 
-### Data Management
-- **Export/Import** — JSON format with tag filtering and duplicate detection
-- **SQLite Storage** — local database, no cloud dependency
-- **System Tray** — runs in the background, always accessible
+<p align="center">
+  <img src="docs/screenshots/usage-example-variable-substitution.png" width="720" alt="Variable substitution prompt">
+</p>
 
-## Installation
+**Multi-format editors** — Plain text, rich text (TipTap), Markdown, and syntax-highlighted code for 15+ languages (JavaScript, Python, Go, Rust, Bash, SQL, YAML, and more).
 
-### From Release (Recommended)
-Download the latest installer from [Releases](../../releases):
-- **macOS**: `.dmg`
-- **Windows**: `.exe`
-- **Linux**: `.AppImage`, `.deb`, `.rpm`
+**Team libraries** — Share command collections through GitHub repos or local folders. Curators publish, members subscribe. Auto-sync keeps everyone current.
 
-**macOS Security Note**: Since this app isn't code signed, macOS will show a warning. To run it:
-- **Method 1**: Right-click the app > "Open" > "Open" (bypasses Gatekeeper)
-- **Method 2**: Run in Terminal:
-  ```bash
-  xattr -cr /Applications/SnipForge.app
-  ```
+**Privacy-first** — Everything stays on your machine. SQLite database, no cloud, no accounts required, no telemetry. GitHub auth is optional and only used for team library sync.
 
-### Build from Source
+**Keyboard-driven** — Full navigation without a mouse. Customizable shortcuts for every action.
+
+## The Armory
+
+SnipForge ships with **The Armory** — a curated starter library of 477 commands across 39 categories including Git, Docker, Kubernetes, SSH, curl, PostgreSQL, nginx, n8n, and more. Import it from `The Armory/` in this repo, or use it as a reference for building your own libraries.
+
+## Download
+
+Get the latest release from the [Releases page](https://github.com/ArtluxDM/SnipForge/releases/latest):
+
+| Platform | Format |
+|----------|--------|
+| macOS | `.dmg` |
+| Windows | `.exe` |
+| Linux | `.AppImage`, `.deb`, `.rpm` |
+
+> **macOS note**: The app isn't code signed yet. Right-click > "Open" > "Open" to bypass Gatekeeper, or run `xattr -cr /Applications/SnipForge.app` in Terminal.
+
+## Quick Start
+
+1. Install and launch SnipForge
+2. Press `Cmd+Shift+Space` (or `Ctrl+Shift+Space`) to open the palette
+3. Start typing to search — results update in real time
+4. Press `Enter` or `C` to copy a command
+5. If the command has `{{variables}}`, fill in the values when prompted
+
+### Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `Arrow Keys` | Navigate list |
+| `C` / `Enter` | Copy command |
+| `Shift+C` | Copy with variables intact |
+| `N` | New command |
+| `E` | Edit selected |
+| `Backspace` | Delete selected |
+| `Escape` | Clear search / close |
+| `S` | Settings |
+
+All shortcuts are customizable in Settings > General.
+
+### Team Libraries
+
+1. Open Settings > **Libraries**
+2. Sign in with GitHub (Settings > Connectors)
+3. Enter a repo URL (e.g., `org/team-commands`)
+4. Click **Subscribe** — commands sync to your palette
+
+Libraries support auto-sync, local folders, and role-based permissions (owner/curator/consumer). See [docs/remote-libraries.md](docs/remote-libraries.md) for details.
+
+## Build from Source
 
 ```bash
 git clone https://github.com/ArtluxDM/SnipForge.git
@@ -56,64 +108,29 @@ pnpm dev       # development
 pnpm build     # production build
 ```
 
-## Usage
-
-### Keyboard Shortcuts
-| Key | Action |
-|-----|--------|
-| Type | Search commands |
-| `Arrow Keys` | Navigate list |
-| `C` or `Enter` | Copy command |
-| `Shift+C` | Copy with variables intact |
-| `N` | New command |
-| `E` | Edit selected |
-| `Backspace` | Delete selected |
-| `Escape` | Clear search |
-| `H` | Help |
-| `S` | Settings |
-
-### Variables
-Use `{{variable name}}` in commands for dynamic values:
-```bash
-ssh {{username}}@{{server}}
-kubectl get pods -n {{namespace}}
-docker exec -it {{container name}} bash
-```
-When copied, you'll be prompted to fill in each variable.
-
-### Remote Libraries
-Subscribe to shared command libraries hosted on GitHub. See [docs/remote-libraries.md](docs/remote-libraries.md) for setup details.
-
-1. Open Settings > **Libraries** tab
-2. Sign in with GitHub
-3. Enter a repo URL (e.g., `org/repo-name`)
-4. Click Subscribe — commands appear in your main list
-
 ## Tech Stack
-- **Desktop**: Electron + Vue 3 + Vite + TypeScript
-- **Database**: SQLite via better-sqlite3
-- **Editors**: CodeMirror 6 (code/markdown), TipTap (rich text)
-- **Search**: Fuse.js (fuzzy search with weighted scoring)
-- **UI**: Lucide icons, virtual scrolling (Virtua), DOMPurify, highlight.js
+
+| Layer | Technology |
+|-------|-----------|
+| Desktop | Electron + Vue 3 + Vite + TypeScript |
+| Database | SQLite via better-sqlite3 |
+| Editors | CodeMirror 6 (code/markdown), TipTap (rich text) |
+| Search | Fuse.js (weighted fuzzy search) |
+| UI | Lucide icons, Virtua (virtual scrolling), highlight.js |
 
 ## Documentation
-- [Codebase Map](docs/codebase-map.md) — file reference, architecture, IPC channels
-- [Remote Libraries](docs/remote-libraries.md) — GitHub OAuth setup, repo structure, sync algorithm
+
+- [Remote Libraries](docs/remote-libraries.md) — GitHub/local library setup, sync algorithm, publishing
+- [Codebase Map](docs/codebase-map.md) — File reference, architecture, IPC channels
+- [Settings](docs/settings.md) — Configuration, hotkey remapping, auto-sync
+- [Variable Substitution](docs/variable-substitution.md) — Template syntax and copy flow
 
 ## Support
 
-SnipForge is built and maintained independently. Development costs include code signing certificates, hosting, and the many hours that go into building and improving the app.
-
-If you or your company uses SnipForge, please consider sponsoring the project. Sponsorships help keep development active and the project sustainable.
-
-[Sponsor SnipForge on GitHub](https://github.com/sponsors/ArtluxDM)
-
-**For companies**: If your team uses SnipForge, a sponsorship is a small investment that directly supports the tool your people rely on.
+SnipForge is built and maintained independently. If you or your team uses it, consider [sponsoring the project](https://github.com/sponsors/ArtluxDM) to keep development active.
 
 ## License
 
-SnipForge is licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0).
+[GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0). Free to use, modify, and distribute. Modifications must be released under AGPL with full source code.
 
-You are free to use, modify, and distribute this software under the terms of the AGPL. Any modifications or derivative works must also be released under the AGPL with full source code.
-
-For commercial licensing inquiries, please reach out via [GitHub](https://github.com/ArtluxDM/SnipForge).
+For commercial licensing inquiries, reach out at [contact@snipforge.dev](mailto:contact@snipforge.dev).
