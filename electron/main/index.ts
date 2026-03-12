@@ -690,13 +690,16 @@ ipcMain.handle('auth:getStatus', async () => {
 })
 
 // ── Library IPC handlers ─────────────────────────────────────────
-ipcMain.handle('library:subscribe', async (_, repoUrl: string) => {
+ipcMain.handle('library:subscribe', async (_, repoUrl: string, subpath?: string) => {
   if (typeof repoUrl !== 'string' || !repoUrl.trim()) {
     return { success: false, error: 'Invalid repository URL' }
   }
   try {
-    const { library, syncResult } = await github.subscribeToLibrary(repoUrl)
-    return { success: true, library, syncResult }
+    const result = await github.subscribeToLibrary(repoUrl, subpath || undefined)
+    if ('needsPick' in result) {
+      return { success: false, needsPick: true, libraries: result.libraries }
+    }
+    return { success: true, library: result.library, syncResult: result.syncResult }
   } catch (error) {
     console.error('Library subscribe error:', error)
     return { success: false, error: (error as Error).message }

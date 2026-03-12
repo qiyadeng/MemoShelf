@@ -1,6 +1,6 @@
 import { safeStorage } from 'electron'
 import * as db from './database'
-import type { GitHubUser, LibraryManifest, LibraryPermission, RemoteCommand, SyncResult, Library, BulkPublishResult } from '../../shared/types'
+import type { GitHubUser, LibraryManifest, LibraryPermission, RemoteCommand, SyncResult, Library, BulkPublishResult, DiscoveredLibrary } from '../../shared/types'
 
 // ── Configuration ─────────────────────────────────────────────────
 // GitHub OAuth App client_id (public — safe to embed, no secret needed)
@@ -304,6 +304,72 @@ function parseCommandEntries(entries: TreeEntry[], dirPath: string): Array<{ pat
     return commands
 }
 
+/**
+ * Discover all SnipForge libraries in a repo.
+ * Uses REST recursive tree (1 call) + GraphQL aliased blob reads (1 call) = 2 calls total.
+ */
+async function discoverLibraries(owner: string, repo: string, context: RepoContext): Promise<DiscoveredLibrary[]> {
+    const tree = await getRepoTree(owner, repo, context.branch)
+    const manifests = tree.filter(f => f.path.endsWith('.snipforge.json') && f.type === 'blob')
+
+    if (manifests.length === 0) return []
+
+    // Count command JSONs per library directory from tree data (no API call)
+    const commandCounts = new Map<string, number>()
+    for (const manifest of manifests) {
+        const dir = manifest.path.includes('/')
+            ? manifest.path.substring(0, manifest.path.lastIndexOf('/'))
+            : ''
+        const count = tree.filter(f =>
+            f.type === 'blob' &&
+            f.path.endsWith('.json') &&
+            f.path !== manifest.path &&
+            (dir === ''
+                ? !f.path.includes('/')
+                : f.path.startsWith(dir + '/') && !f.path.substring(dir.length + 1).includes('/'))
+        ).length
+        commandCounts.set(manifest.path, count)
+    }
+
+    // Read all manifests with a single GraphQL query using aliases
+    const aliases = manifests.map((m, i) => {
+        const escaped = m.path.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+        return `m${i}: object(expression: "HEAD:${escaped}") { ... on Blob { text } }`
+    }).join('\n')
+
+    const data = await graphqlFetch<{ repository: Record<string, { text: string } | null> }>(
+        `query ($owner: String!, $name: String!) {
+            repository(owner: $owner, name: $name) {
+                ${aliases}
+            }
+        }`,
+        { owner, name: repo }
+    )
+
+    const libraries: DiscoveredLibrary[] = []
+    for (let i = 0; i < manifests.length; i++) {
+        const manifestData = data.repository[`m${i}`]
+        if (!manifestData?.text) continue
+
+        try {
+            const manifest = JSON.parse(manifestData.text) as LibraryManifest
+            const dir = manifests[i].path.includes('/')
+                ? manifests[i].path.substring(0, manifests[i].path.lastIndexOf('/'))
+                : ''
+
+            libraries.push({
+                name: manifest.name || dir || repo,
+                description: manifest.description || '',
+                path: dir,
+                manifestPath: manifests[i].path,
+                commandCount: commandCounts.get(manifests[i].path) || 0,
+            })
+        } catch { /* invalid manifest JSON, skip */ }
+    }
+
+    return libraries
+}
+
 // ── Auth: Device Flow ─────────────────────────────────────────────
 
 // State for the active polling session
@@ -547,58 +613,76 @@ export async function browseLibrary(repoUrl: string, ctx?: RepoContext): Promise
     return { manifest, manifestPath: manifestFile.path, commands, context }
 }
 
-export async function subscribeToLibrary(repoUrl: string): Promise<{ library: Library; syncResult: SyncResult }> {
-    const { owner, repo } = parseRepoUrl(repoUrl)
-    const githubRepo = `${owner}/${repo}`
+export async function subscribeToLibrary(
+    repoUrl: string,
+    subpath?: string
+): Promise<{ library: Library; syncResult: SyncResult } | { needsPick: true; libraries: DiscoveredLibrary[] }> {
+    const parsed = parseRepoUrl(repoUrl)
+    const { owner, repo } = parsed
+    const effectiveSubpath = subpath || parsed.subpath
 
-    // Check if already subscribed
+    // Build the stored identifier — includes subpath for multi-library repos
+    const githubRepo = effectiveSubpath ? `${owner}/${repo}/${effectiveSubpath}` : `${owner}/${repo}`
+
+    // Check if already subscribed (exact match on full identifier)
     const existing = db.getLibraryByRepo(githubRepo)
     if (existing) {
         throw new Error(`Already subscribed to ${githubRepo}`)
     }
 
-    // Browse fetches context (branch, SHA, permission) + manifest + commands in 1-2 GraphQL calls
-    let browseResult: Awaited<ReturnType<typeof browseLibrary>> | null = null
-    try {
-        browseResult = await browseLibrary(repoUrl)
-    } catch (e) {
-        const msg = (e as Error).message
-        if (!msg.includes('missing .snipforge.json')) throw e
-        // No manifest — that's OK, we'll subscribe without syncing
-    }
-
-    if (browseResult) {
-        const { manifest, manifestPath, commands, context } = browseResult
-
-        const libraryId = db.addLibrary(githubRepo, manifest.name, manifest.description, manifestPath, 'github', context.permission)
-
-        const localBodies = db.getLocalCommandBodies()
-        const toAdd = commands
-            .filter(({ command }) => !localBodies.has(command.body.trim()))
-            .map(({ path, command }) => ({
-                remotePath: path,
-                command: {
-                    title: command.title,
-                    body: command.body,
-                    description: command.description || '',
-                    tags: JSON.stringify(command.tags || []),
-                    language: command.language || 'plaintext',
-                    created_at: command.created_at || new Date().toISOString(),
-                    updated_at: command.updated_at || new Date().toISOString(),
-                }
-            }))
-
-        const syncResult = db.syncRemoteCommands(libraryId, context.latestSha, toAdd, [], [])
-        const library = db.getLibraryByRepo(githubRepo)!
-        return { library, syncResult }
-    } else {
-        // No manifest — need context for permission. Single GraphQL call.
+    // If no subpath, check for multiple libraries before subscribing
+    if (!effectiveSubpath) {
         const context = await getRepoContext(owner, repo)
+        const discovered = await discoverLibraries(owner, repo, context)
+
+        if (discovered.length > 1) {
+            return { needsPick: true, libraries: discovered }
+        }
+
+        // 0 or 1 manifests — proceed with normal flow
+        if (discovered.length === 1) {
+            // Single library — use scoped browse (efficient: 1 GraphQL call)
+            const scopedUrl = discovered[0].path ? `${owner}/${repo}/${discovered[0].path}` : `${owner}/${repo}`
+            const browseResult = await browseLibrary(scopedUrl, context)
+            return doSubscribe(githubRepo, browseResult)
+        }
+
+        // No manifests — subscribe without syncing
         const repoName = repo.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
         db.addLibrary(githubRepo, repoName, '', undefined, 'github', context.permission)
         const library = db.getLibraryByRepo(githubRepo)!
         return { library, syncResult: { added: 0, updated: 0, removed: 0, errors: [] } }
     }
+
+    // Subpath known — direct scoped subscribe
+    const browseResult = await browseLibrary(githubRepo)
+    return doSubscribe(githubRepo, browseResult)
+}
+
+function doSubscribe(githubRepo: string, browseResult: Awaited<ReturnType<typeof browseLibrary>>): { library: Library; syncResult: SyncResult } {
+    const { manifest, manifestPath, commands, context } = browseResult
+
+    const libraryId = db.addLibrary(githubRepo, manifest.name, manifest.description, manifestPath, 'github', context.permission)
+
+    const localBodies = db.getLocalCommandBodies()
+    const toAdd = commands
+        .filter(({ command }) => !localBodies.has(command.body.trim()))
+        .map(({ path, command }) => ({
+            remotePath: path,
+            command: {
+                title: command.title,
+                body: command.body,
+                description: command.description || '',
+                tags: JSON.stringify(command.tags || []),
+                language: command.language || 'plaintext',
+                created_at: command.created_at || new Date().toISOString(),
+                updated_at: command.updated_at || new Date().toISOString(),
+            }
+        }))
+
+    const syncResult = db.syncRemoteCommands(libraryId, context.latestSha, toAdd, [], [])
+    const library = db.getLibraryByRepo(githubRepo)!
+    return { library, syncResult }
 }
 
 export async function syncLibrary(libraryId: number, force = false): Promise<SyncResult> {
@@ -626,10 +710,16 @@ export async function syncLibrary(libraryId: number, force = false): Promise<Syn
         return { added: 0, updated: 0, removed: 0, errors: [] }
     }
 
+    // Scope browse to the library's manifest directory (critical for multi-library repos)
+    const manifestDir = library.manifest_path!.includes('/')
+        ? library.manifest_path!.substring(0, library.manifest_path!.lastIndexOf('/'))
+        : ''
+    const scopedUrl = manifestDir ? `${owner}/${repo}/${manifestDir}` : `${owner}/${repo}`
+
     // Fetch remote commands — pass context through to avoid redundant calls
     let browseResult: Awaited<ReturnType<typeof browseLibrary>>
     try {
-        browseResult = await browseLibrary(library.github_repo, context)
+        browseResult = await browseLibrary(scopedUrl, context)
     } catch (e) {
         const msg = (e as Error).message
         if (msg.includes('missing .snipforge.json')) {

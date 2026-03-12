@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron"
-import type { Command, Library, SyncResult, AuthStatus, GitHubUser, BulkPublishResult, UpdateStatus } from "../../shared/types"
+import type { Command, Library, SyncResult, AuthStatus, GitHubUser, BulkPublishResult, UpdateStatus, DiscoveredLibrary } from "../../shared/types"
 //expose db methods to renderer process
 contextBridge.exposeInMainWorld('electronAPI', {
   // db methods
@@ -75,8 +75,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   // Library methods
   library: {
-    subscribe: (repoUrl: string): Promise<{ success: boolean; library?: Library; syncResult?: SyncResult; error?: string }> =>
-      ipcRenderer.invoke('library:subscribe', repoUrl),
+    subscribe: (repoUrl: string, subpath?: string): Promise<{ success: boolean; library?: Library; syncResult?: SyncResult; needsPick?: boolean; libraries?: DiscoveredLibrary[]; error?: string }> =>
+      ipcRenderer.invoke('library:subscribe', repoUrl, subpath),
     unsubscribe: (libraryId: number): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('library:unsubscribe', libraryId),
     setAutoSync: (libraryId: number, enabled: boolean): Promise<{ success: boolean; error?: string }> =>

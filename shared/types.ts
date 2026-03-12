@@ -88,6 +88,15 @@ export interface BulkPublishResult {
   error?: string
 }
 
+// Multi-library discovery
+export interface DiscoveredLibrary {
+  name: string
+  description: string
+  path: string          // directory path (subpath to use for scoped subscribe)
+  manifestPath: string  // full path to .snipforge.json
+  commandCount: number  // number of command JSON files in the directory
+}
+
 // Auto-update types
 export interface UpdateStatus {
   currentVersion: string

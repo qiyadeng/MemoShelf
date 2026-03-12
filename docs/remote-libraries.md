@@ -610,22 +610,30 @@ Addresses two shortcomings from the original design: excessive REST API calls (o
 
 **Solution:**
 
-**Input format — full GitHub URLs only.** Drop `owner/repo` shorthand:
-- URL carries owner, repo, branch, and subpath unambiguously
-- `ArtluxDM/SnipForge/The Armory` is ambiguous (is "The" a repo name or subpath?)
-- Users copy-paste from browser anyway
-- GitHub URLs are case-insensitive; shorthand parsing isn't
+**Input format — both `owner/repo` and full GitHub URLs supported.** Original plan was to drop shorthand, but `owner/repo` works reliably after #14's GraphQL switch and rate limit fixes. Both formats accepted; `parseRepoUrl()` handles all variations.
+
+**Multi-library storage:** When subscribing to a specific library in a multi-library repo, `github_repo` stores the full path including subpath (e.g., `ArtluxDM/SnipForge/The Armory`). This avoids schema migration while allowing multiple subscriptions per repo via the existing UNIQUE constraint. `parseRepoUrl()` extracts `owner`, `repo`, and `subpath` from the stored value.
 
 **Subscribe flow:**
 1. URL with subpath (e.g., `https://github.com/ArtluxDM/SnipForge/tree/main/The%20Armory`) → scope to that directory, find the one manifest, subscribe directly
-2. URL without subpath + single manifest → subscribe directly (current behavior)
-3. URL without subpath + multiple manifests → show picker modal with library name + directory path for each
+2. URL without subpath + single manifest → subscribe directly
+3. URL without subpath + multiple manifests → show picker modal with library name, directory path, and command count
+4. URL without subpath + no manifests → subscribe without syncing (click Init to set up)
+
+**Implementation:**
+- `discoverLibraries()` — REST recursive tree + GraphQL aliased blob reads (2 API calls) to find all manifests, read their metadata, count commands per directory
+- `subscribeToLibrary(repoUrl, subpath?)` — returns `{ needsPick: true, libraries }` when multiple manifests found, frontend shows picker, user picks, re-calls subscribe with subpath
+- `syncLibrary()` — now scopes browse to manifest directory using `manifest_path` (was previously using unscoped `github_repo`, causing sync to pick first manifest in multi-library repos)
+- Library picker modal in SettingsModal — shows name, path, description, command count for each discovered library
 
 **Deliverables:**
-- [ ] `parseRepoUrl()` only accepts full GitHub URLs
-- [ ] `browseLibrary()` discovers ALL manifests (not just first)
-- [ ] URL with subpath → scoped subscribe
-- [ ] URL without subpath + multiple manifests → picker modal
-- [ ] Picker shows library name + directory path
+- [x] `parseRepoUrl()` accepts both `owner/repo` and full GitHub URLs (kept shorthand support)
+- [x] `discoverLibraries()` finds ALL manifests in a repo via REST tree + GraphQL
+- [x] URL with subpath → scoped subscribe (single GraphQL call)
+- [x] URL without subpath + single manifest → subscribe directly
+- [x] URL without subpath + multiple manifests → picker modal
+- [x] Picker shows library name, directory path, description, and command count
+- [x] Subscribing from picker scopes to selected library's directory
+- [x] `syncLibrary()` scoped to manifest directory (fixes multi-library sync correctness)
 
 **Depends on:** #14 (GraphQL reads — tree discovery benefits from single query)

@@ -520,6 +520,32 @@
       </div>
     </div>
 
+    <!-- Library Picker Modal -->
+    <div v-if="libraryPicker.visible" class="init-modal-overlay" @click.self="closeLibraryPicker">
+      <div class="init-modal" style="width: 420px;">
+        <h3>Choose a Library</h3>
+        <p class="init-modal-repo">This repo has {{ libraryPicker.libraries.length }} libraries</p>
+        <div class="picker-list">
+          <button
+            v-for="lib in libraryPicker.libraries"
+            :key="lib.manifestPath"
+            class="picker-item"
+            @click="handlePickLibrary(lib)"
+          >
+            <div class="picker-item-name">{{ lib.name }}</div>
+            <div class="picker-item-meta">
+              <span class="picker-item-path">{{ lib.path || '/' }}</span>
+              <span class="picker-item-count">{{ lib.commandCount }} command{{ lib.commandCount !== 1 ? 's' : '' }}</span>
+            </div>
+            <div v-if="lib.description" class="picker-item-desc">{{ lib.description }}</div>
+          </button>
+        </div>
+        <div class="init-modal-actions">
+          <button @click="closeLibraryPicker" class="init-modal-cancel">Cancel</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Init Library Modal -->
     <div v-if="initModal.visible" class="init-modal-overlay" @click.self="closeInitModal">
       <div class="init-modal" @click="locationOpen = false">
@@ -643,7 +669,7 @@ import { getInlineSuggestion } from '../utils/autocomplete'
 import { useSettings } from '../composables/useSettings'
 import CommandList from './CommandList.vue'
 import TagSelector from './TagSelector.vue'
-import type { Library, AuthStatus, UpdateStatus } from '../../shared/types'
+import type { Library, AuthStatus, UpdateStatus, DiscoveredLibrary } from '../../shared/types'
 
 // Props
 interface Props {
@@ -978,6 +1004,41 @@ const syncing = ref(false)
 const libraryError = ref('')
 const syncMessage = ref('')
 const syncMessageType = ref<'success' | 'error'>('success')
+
+// ── Library Picker State ──────────────────────────────────────
+const libraryPicker = ref({
+  visible: false,
+  repoUrl: '',
+  libraries: [] as DiscoveredLibrary[],
+})
+
+function closeLibraryPicker() {
+  libraryPicker.value.visible = false
+}
+
+async function handlePickLibrary(lib: DiscoveredLibrary) {
+  libraryPicker.value.visible = false
+  subscribing.value = true
+  libraryError.value = ''
+
+  try {
+    const result = await (window.electronAPI as any).library.subscribe(libraryPicker.value.repoUrl, lib.path)
+    if (result.success) {
+      newRepoUrl.value = ''
+      await loadLibraries()
+      syncMessage.value = `Subscribed to ${lib.name}! Added ${result.syncResult?.added || 0} commands.`
+      syncMessageType.value = 'success'
+      emit('libraries-changed')
+      clearSyncMessage()
+    } else {
+      libraryError.value = result.error || 'Failed to subscribe'
+    }
+  } catch (e) {
+    libraryError.value = (e as Error).message
+  } finally {
+    subscribing.value = false
+  }
+}
 
 // ── Auto-Sync State ───────────────────────────────────────────
 const autoSyncEnabled = ref(false)
@@ -1393,6 +1454,15 @@ async function handleSubscribe() {
 
   try {
     const result = await (window.electronAPI as any).library.subscribe(newRepoUrl.value.trim())
+    if (result.needsPick) {
+      // Multiple libraries found — show picker
+      libraryPicker.value = {
+        visible: true,
+        repoUrl: newRepoUrl.value.trim(),
+        libraries: result.libraries,
+      }
+      return
+    }
     if (result.success) {
       newRepoUrl.value = ''
       await loadLibraries()
@@ -3646,6 +3716,60 @@ const handleExportAsLibrary = () => {
 .init-modal-confirm:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* ── Library Picker ─────────────────────────────────────────── */
+.picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.picker-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-input, #2a2a2a);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.picker-item:hover {
+  border-color: var(--accent, #58a6ff);
+  background: var(--bg-hover);
+}
+
+.picker-item-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.picker-item-meta {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.picker-item-path {
+  font-family: monospace;
+}
+
+.picker-item-count {
+  color: var(--text-muted);
+}
+
+.picker-item-desc {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 
 /* ── Updates Section ────────────────────────────────────────── */
