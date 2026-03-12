@@ -7,6 +7,7 @@ import type { GitHubUser, LibraryManifest, LibraryPermission, RemoteCommand, Syn
 // TODO: Replace with your actual GitHub OAuth App client_id
 const CLIENT_ID = 'Ov23liUzEMqcz42aCKBn'
 const GITHUB_API = 'https://api.github.com'
+const GITHUB_GRAPHQL = 'https://api.github.com/graphql'
 const DEVICE_CODE_URL = 'https://github.com/login/device/code'
 const ACCESS_TOKEN_URL = 'https://github.com/login/oauth/access_token'
 
@@ -88,6 +89,219 @@ async function parseGitHubError(res: Response): Promise<string> {
     } catch {
         return `GitHub API error: ${res.status}`
     }
+}
+
+async function graphqlFetch<T = any>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
+    const token = getStoredToken()
+    if (!token) throw new Error('GitHub authentication required')
+
+    const res = await fetch(GITHUB_GRAPHQL, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ query, variables }),
+    })
+
+    if (!res.ok) {
+        throw new Error(await parseGitHubError(res))
+    }
+
+    const json = await res.json() as { data?: T; errors?: Array<{ message: string; type?: string }> }
+
+    if (json.errors?.length) {
+        const msg = json.errors[0].message
+        if (/rate limit/i.test(msg)) {
+            throw new Error('GitHub API rate limit exceeded.')
+        }
+        throw new Error(msg)
+    }
+
+    if (!json.data) {
+        throw new Error('Empty response from GitHub API')
+    }
+
+    return json.data
+}
+
+// ── Repo Context (GraphQL) ──────────────────────────────────────
+
+interface RepoContext {
+    owner: string
+    repo: string
+    branch: string
+    latestSha: string
+    permission: LibraryPermission
+}
+
+function derivePermission(viewerLogin: string, ownerLogin: string, viewerPermission: string | null): LibraryPermission {
+    if (viewerLogin.toLowerCase() === ownerLogin.toLowerCase()) return 'owner'
+    if (viewerPermission === 'ADMIN') return 'curator'
+    return 'consumer'
+}
+
+/** Single GraphQL call → branch, latest SHA, permission. Used as context for all read operations. */
+async function getRepoContext(owner: string, repo: string): Promise<RepoContext> {
+    const data = await graphqlFetch<{
+        repository: {
+            defaultBranchRef: { name: string; target: { oid: string } } | null
+            owner: { login: string }
+            viewerPermission: string | null
+        } | null
+        viewer: { login: string }
+    }>(
+        `query ($owner: String!, $name: String!) {
+            repository(owner: $owner, name: $name) {
+                defaultBranchRef {
+                    name
+                    target { ... on Commit { oid } }
+                }
+                owner { login }
+                viewerPermission
+            }
+            viewer { login }
+        }`,
+        { owner, name: repo }
+    )
+
+    if (!data.repository) {
+        throw new Error(`Repository not found: ${owner}/${repo}`)
+    }
+
+    const repoData = data.repository
+    const branch = repoData.defaultBranchRef?.name || 'main'
+    const latestSha = repoData.defaultBranchRef?.target?.oid || ''
+
+    return {
+        owner,
+        repo,
+        branch,
+        latestSha,
+        permission: derivePermission(data.viewer.login, repoData.owner.login, repoData.viewerPermission),
+    }
+}
+
+interface TreeEntry {
+    name: string
+    type: string
+    object: { text: string } | null
+}
+
+/** Fetch a single directory's contents via GraphQL. Returns flat entries (files + subdirs). */
+async function fetchDirectoryContents(owner: string, repo: string, expression: string): Promise<TreeEntry[]> {
+    const data = await graphqlFetch<{
+        repository: {
+            object: { entries: TreeEntry[] } | null
+        } | null
+    }>(
+        `query ($owner: String!, $name: String!, $expression: String!) {
+            repository(owner: $owner, name: $name) {
+                object(expression: $expression) {
+                    ... on Tree {
+                        entries {
+                            name
+                            type
+                            object { ... on Blob { text } }
+                        }
+                    }
+                }
+            }
+        }`,
+        { owner, name: repo, expression }
+    )
+
+    if (!data.repository) {
+        throw new Error(`Repository not found: ${owner}/${repo}`)
+    }
+
+    return data.repository.object?.entries || []
+}
+
+/** Combined: repo context + directory contents in a single GraphQL call. */
+async function getRepoContextWithTree(owner: string, repo: string, dirPath: string): Promise<{ context: RepoContext; entries: TreeEntry[] }> {
+    const data = await graphqlFetch<{
+        repository: {
+            defaultBranchRef: { name: string; target: { oid: string } } | null
+            owner: { login: string }
+            viewerPermission: string | null
+            object: { entries: TreeEntry[] } | null
+        } | null
+        viewer: { login: string }
+    }>(
+        `query ($owner: String!, $name: String!, $expression: String!) {
+            repository(owner: $owner, name: $name) {
+                defaultBranchRef {
+                    name
+                    target { ... on Commit { oid } }
+                }
+                owner { login }
+                viewerPermission
+                object(expression: $expression) {
+                    ... on Tree {
+                        entries {
+                            name
+                            type
+                            object { ... on Blob { text } }
+                        }
+                    }
+                }
+            }
+            viewer { login }
+        }`,
+        { owner, name: repo, expression: `HEAD:${dirPath}` }
+    )
+
+    if (!data.repository) {
+        throw new Error(`Repository not found: ${owner}/${repo}`)
+    }
+
+    const repoData = data.repository
+    const branch = repoData.defaultBranchRef?.name || 'main'
+    const latestSha = repoData.defaultBranchRef?.target?.oid || ''
+
+    return {
+        context: {
+            owner,
+            repo,
+            branch,
+            latestSha,
+            permission: derivePermission(data.viewer.login, repoData.owner.login, repoData.viewerPermission),
+        },
+        entries: repoData.object?.entries || [],
+    }
+}
+
+/** Parse GraphQL tree entries into commands. dirPath is the manifest's parent directory (for building remote_path). */
+function parseCommandEntries(entries: TreeEntry[], dirPath: string): Array<{ path: string; command: RemoteCommand }> {
+    const commands: Array<{ path: string; command: RemoteCommand }> = []
+
+    for (const entry of entries) {
+        if (entry.type !== 'blob' || !entry.name.endsWith('.json') || entry.name === '.snipforge.json') continue
+        if (!entry.object?.text) continue
+
+        try {
+            const parsed = JSON.parse(entry.object.text)
+            if (typeof parsed.title === 'string' && parsed.title.trim() && typeof parsed.body === 'string' && parsed.body.trim()) {
+                commands.push({
+                    path: dirPath ? `${dirPath}/${entry.name}` : entry.name,
+                    command: {
+                        title: parsed.title,
+                        body: parsed.body,
+                        description: parsed.description || '',
+                        tags: Array.isArray(parsed.tags) ? parsed.tags : [],
+                        language: parsed.language || 'plaintext',
+                        created_at: parsed.created_at || new Date().toISOString(),
+                        updated_at: parsed.updated_at || new Date().toISOString(),
+                    },
+                })
+            }
+        } catch {
+            // Not valid JSON or not a command — skip
+        }
+    }
+
+    return commands
 }
 
 // ── Auth: Device Flow ─────────────────────────────────────────────
@@ -265,29 +479,7 @@ async function getRepoDefaultBranch(owner: string, repo: string): Promise<string
     return data.default_branch || 'main'
 }
 
-export async function detectPermission(owner: string, repo: string): Promise<LibraryPermission> {
-    const res = await githubFetch(`/repos/${owner}/${repo}`)
-    if (!res.ok) return 'consumer'
-    const data = await res.json()
-
-    // Check if the authenticated user is the repo owner
-    const user = await getAuthenticatedUser()
-    if (user && data.owner?.login === user.login) return 'owner'
-
-    // Admin access → curator
-    if (data.permissions?.admin) return 'curator'
-
-    // Everything else (write/maintain/triage/read) → consumer
-    return 'consumer'
-}
-
-async function getLatestCommitSha(owner: string, repo: string, branch: string): Promise<string> {
-    const res = await githubFetch(`/repos/${owner}/${repo}/commits/${branch}`)
-    if (!res.ok) throw new Error(await parseGitHubError(res))
-    const data = await res.json()
-    return data.sha
-}
-
+// getRepoTree: kept for manifest discovery (no-subpath browse) and getRepoFolders
 async function getRepoTree(owner: string, repo: string, branch: string): Promise<Array<{ path: string; type: string; sha: string }>> {
     const res = await githubFetch(`/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`)
     if (!res.ok) throw new Error(await parseGitHubError(res))
@@ -295,80 +487,64 @@ async function getRepoTree(owner: string, repo: string, branch: string): Promise
     return data.tree || []
 }
 
-async function getFileContent(owner: string, repo: string, filePath: string, branch: string): Promise<string> {
-    const res = await githubFetch(`/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}`)
-    if (!res.ok) throw new Error(await parseGitHubError(res))
-    const data = await res.json()
-
-    if (data.encoding === 'base64') {
-        return Buffer.from(data.content, 'base64').toString('utf8')
-    }
-
-    return data.content
-}
-
 // ── Library Operations ────────────────────────────────────────────
 
-export async function browseLibrary(repoUrl: string): Promise<{ manifest: LibraryManifest; manifestPath: string; commands: Array<{ path: string; command: RemoteCommand }> }> {
-    const { owner, repo } = parseRepoUrl(repoUrl)
-    const branch = await getRepoDefaultBranch(owner, repo)
-    const tree = await getRepoTree(owner, repo, branch)
+/**
+ * Browse a library via GraphQL.
+ * - If subpath provided in URL → single GraphQL call (tree at that dir)
+ * - If no subpath → REST recursive tree to find manifest, then GraphQL for contents
+ * Returns manifest, its path, and all parsed commands.
+ */
+export async function browseLibrary(repoUrl: string, ctx?: RepoContext): Promise<{ manifest: LibraryManifest; manifestPath: string; commands: Array<{ path: string; command: RemoteCommand }>; context: RepoContext }> {
+    const { owner, repo, subpath } = parseRepoUrl(repoUrl)
 
-    // Find the manifest anywhere in the repo
-    const manifestFile = tree.find(f =>
-        f.path.endsWith('.snipforge.json') &&
-        f.type === 'blob'
-    )
+    if (subpath) {
+        // Subpath known — single combined GraphQL call
+        const { context, entries } = ctx
+            ? { context: ctx, entries: await fetchDirectoryContents(owner, repo, `HEAD:${subpath}`).catch(() => []) }
+            : await getRepoContextWithTree(owner, repo, subpath)
+
+        // Find manifest in the directory entries
+        const manifestEntry = entries.find(e => e.name === '.snipforge.json' && e.type === 'blob')
+        if (!manifestEntry?.object?.text) {
+            throw new Error('Not a SnipForge library — missing .snipforge.json manifest')
+        }
+
+        const manifest = JSON.parse(manifestEntry.object.text) as LibraryManifest
+        const manifestPath = `${subpath}/.snipforge.json`
+        const commands = parseCommandEntries(entries, subpath)
+
+        return { manifest, manifestPath, commands, context }
+    }
+
+    // No subpath — need to discover manifest location
+    const context = ctx || await getRepoContext(owner, repo)
+
+    // REST recursive tree to find .snipforge.json (1 call, lightweight — no file contents)
+    const tree = await getRepoTree(owner, repo, context.branch)
+    const manifestFile = tree.find(f => f.path.endsWith('.snipforge.json') && f.type === 'blob')
     if (!manifestFile) {
         throw new Error('Not a SnipForge library — missing .snipforge.json manifest')
     }
 
-    const manifestContent = await getFileContent(owner, repo, manifestFile.path, branch)
-    const manifest = JSON.parse(manifestContent) as LibraryManifest
-
-    // Scope scan to the manifest's directory — avoids scanning unrelated files in monorepos
+    // Determine manifest's parent directory
     const manifestDir = manifestFile.path.includes('/')
-        ? manifestFile.path.substring(0, manifestFile.path.lastIndexOf('/') + 1)
-        : '' // root — scan the whole repo
+        ? manifestFile.path.substring(0, manifestFile.path.lastIndexOf('/'))
+        : '' // root
 
-    const candidateFiles = tree.filter(f =>
-        f.path.endsWith('.json') &&
-        f.type === 'blob' &&
-        f.path !== manifestFile.path &&
-        f.path.startsWith(manifestDir) &&
-        !f.path.includes('node_modules/') &&
-        !f.path.includes('.vscode/')
-    )
+    // GraphQL to fetch directory contents with inline text (1 call for all files)
+    const expression = manifestDir ? `HEAD:${manifestDir}` : `HEAD:`
+    const entries = await fetchDirectoryContents(owner, repo, expression)
 
-    // Fetch and validate each file against the command schema
-    const commands: Array<{ path: string; command: RemoteCommand }> = []
-    for (const file of candidateFiles) {
-        try {
-            const content = await getFileContent(owner, repo, file.path, branch)
-            const parsed = JSON.parse(content)
-
-            // Validate: must have title (string) and body (string) at minimum
-            if (
-                typeof parsed.title === 'string' && parsed.title.trim() &&
-                typeof parsed.body === 'string' && parsed.body.trim()
-            ) {
-                const command: RemoteCommand = {
-                    title: parsed.title,
-                    body: parsed.body,
-                    description: parsed.description || '',
-                    tags: Array.isArray(parsed.tags) ? parsed.tags : [],
-                    language: parsed.language || 'plaintext',
-                    created_at: parsed.created_at || new Date().toISOString(),
-                    updated_at: parsed.updated_at || new Date().toISOString(),
-                }
-                commands.push({ path: file.path, command })
-            }
-        } catch {
-            // Not valid JSON or not a command — skip silently
-        }
+    // Parse manifest from entries
+    const manifestEntry = entries.find(e => e.name === '.snipforge.json' && e.type === 'blob')
+    if (!manifestEntry?.object?.text) {
+        throw new Error('Not a SnipForge library — missing .snipforge.json manifest')
     }
+    const manifest = JSON.parse(manifestEntry.object.text) as LibraryManifest
+    const commands = parseCommandEntries(entries, manifestDir)
 
-    return { manifest, manifestPath: manifestFile.path, commands }
+    return { manifest, manifestPath: manifestFile.path, commands, context }
 }
 
 export async function subscribeToLibrary(repoUrl: string): Promise<{ library: Library; syncResult: SyncResult }> {
@@ -381,13 +557,7 @@ export async function subscribeToLibrary(repoUrl: string): Promise<{ library: Li
         throw new Error(`Already subscribed to ${githubRepo}`)
     }
 
-    // Validate the repo exists (will throw if not found / no access)
-    await getRepoDefaultBranch(owner, repo)
-
-    // Detect permission level for this repo
-    const permission = await detectPermission(owner, repo)
-
-    // Try to browse — if no manifest, subscribe anyway (user can init later)
+    // Browse fetches context (branch, SHA, permission) + manifest + commands in 1-2 GraphQL calls
     let browseResult: Awaited<ReturnType<typeof browseLibrary>> | null = null
     try {
         browseResult = await browseLibrary(repoUrl)
@@ -398,12 +568,9 @@ export async function subscribeToLibrary(repoUrl: string): Promise<{ library: Li
     }
 
     if (browseResult) {
-        // Repo has a manifest — full subscribe + sync
-        const { manifest, manifestPath, commands } = browseResult
-        const branch = await getRepoDefaultBranch(owner, repo)
-        const sha = await getLatestCommitSha(owner, repo, branch)
+        const { manifest, manifestPath, commands, context } = browseResult
 
-        const libraryId = db.addLibrary(githubRepo, manifest.name, manifest.description, manifestPath, 'github', permission)
+        const libraryId = db.addLibrary(githubRepo, manifest.name, manifest.description, manifestPath, 'github', context.permission)
 
         const localBodies = db.getLocalCommandBodies()
         const toAdd = commands
@@ -421,13 +588,14 @@ export async function subscribeToLibrary(repoUrl: string): Promise<{ library: Li
                 }
             }))
 
-        const syncResult = db.syncRemoteCommands(libraryId, sha, toAdd, [], [])
+        const syncResult = db.syncRemoteCommands(libraryId, context.latestSha, toAdd, [], [])
         const library = db.getLibraryByRepo(githubRepo)!
         return { library, syncResult }
     } else {
-        // No manifest — create library record as uninitialized
+        // No manifest — need context for permission. Single GraphQL call.
+        const context = await getRepoContext(owner, repo)
         const repoName = repo.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-        db.addLibrary(githubRepo, repoName, '', undefined, 'github', permission)
+        db.addLibrary(githubRepo, repoName, '', undefined, 'github', context.permission)
         const library = db.getLibraryByRepo(githubRepo)!
         return { library, syncResult: { added: 0, updated: 0, removed: 0, errors: [] } }
     }
@@ -444,24 +612,24 @@ export async function syncLibrary(libraryId: number, force = false): Promise<Syn
     }
 
     const { owner, repo } = parseRepoUrl(library.github_repo)
-    const branch = await getRepoDefaultBranch(owner, repo)
-    const sha = await getLatestCommitSha(owner, repo, branch)
+
+    // Lightweight context check first (1 GraphQL call) — gives us SHA + permission
+    const context = await getRepoContext(owner, repo)
 
     // Refresh permissions on every sync
-    const permission = await detectPermission(owner, repo)
-    if (permission !== library.permission) {
-        db.updateLibraryPermission(libraryId, permission)
+    if (context.permission !== library.permission) {
+        db.updateLibraryPermission(libraryId, context.permission)
     }
 
     // Skip if nothing changed (unless force-syncing, e.g. user clicked Sync)
-    if (!force && library.last_synced_sha === sha) {
+    if (!force && library.last_synced_sha === context.latestSha) {
         return { added: 0, updated: 0, removed: 0, errors: [] }
     }
 
-    // Fetch remote commands — if manifest was deleted, clear manifest_path so UI shows Init
+    // Fetch remote commands — pass context through to avoid redundant calls
     let browseResult: Awaited<ReturnType<typeof browseLibrary>>
     try {
-        browseResult = await browseLibrary(library.github_repo)
+        browseResult = await browseLibrary(library.github_repo, context)
     } catch (e) {
         const msg = (e as Error).message
         if (msg.includes('missing .snipforge.json')) {
@@ -536,7 +704,7 @@ export async function syncLibrary(libraryId: number, force = false): Promise<Syn
         }
     }
 
-    return db.syncRemoteCommands(libraryId, sha, toAdd, toUpdate, toRemove)
+    return db.syncRemoteCommands(libraryId, context.latestSha, toAdd, toUpdate, toRemove)
 }
 
 export async function syncAllLibraries(): Promise<{ results: Array<{ library: Library; result: SyncResult }> }> {

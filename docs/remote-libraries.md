@@ -594,12 +594,15 @@ Addresses two shortcomings from the original design: excessive REST API calls (o
 - `parseGitHubError()` — DONE (landed in error handling fix). Distinguishes rate limit vs bad credentials vs permission denied. Prevents token deletion on transient errors.
 
 **Deliverables:**
-- [ ] `getRepoInfo()` single-fetch context object
-- [ ] `graphqlFetch()` wrapper with error handling
-- [ ] `browseLibrary()` uses GraphQL tree query with content
-- [ ] `subscribeToLibrary()` makes ≤3 API calls regardless of library size
-- [ ] `syncLibrary()` makes ≤3 API calls regardless of library size
-- [ ] REST retained for auth + writes (no regression)
+- [x] `getRepoContext()` single-fetch context object (branch, SHA, permission via GraphQL `viewerPermission`)
+- [x] `graphqlFetch()` wrapper with error handling (rate limit, auth, response parsing)
+- [x] `browseLibrary()` uses GraphQL tree query with inline blob content
+- [x] `subscribeToLibrary()` — 1-2 GraphQL calls (with subpath: 1, without: 2 + 1 REST tree)
+- [x] `syncLibrary()` — 1 call (SHA match) or 2 calls (context + tree)
+- [x] REST retained for auth + writes (no regression)
+- [x] `detectPermission()` removed — derived from `viewerPermission` in repo context
+- [x] `getFileContent()` removed — content comes inline from GraphQL tree entries
+- [x] `getLatestCommitSha()` removed — SHA comes from `defaultBranchRef.target.oid`
 
 ##### Multi-library repos: discovery + picker (issue [#15](https://github.com/ArtluxDM/SnipForge/issues/15))
 
