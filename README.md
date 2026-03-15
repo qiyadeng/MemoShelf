@@ -33,9 +33,7 @@ Teams use it to share command libraries via GitHub repos. New members subscribe 
 **Variables** — Use `{{variable name}}` templates. When you copy, SnipForge prompts you to fill in each value before it hits your clipboard.
 
 ```bash
-ssh {{username}}@{{server}}
-kubectl get pods -n {{namespace}}
-docker exec -it {{container}} bash
+/add customer {{Customer Name}}
 ```
 
 <p align="center">
