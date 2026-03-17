@@ -637,3 +637,41 @@ Addresses two shortcomings from the original design: excessive REST API calls (o
 - [x] `syncLibrary()` scoped to manifest directory (fixes multi-library sync correctness)
 
 **Depends on:** #14 (GraphQL reads — tree discovery benefits from single query)
+
+#### Phase 7: Local Library Parity — Recursive Discovery + Multi-Library Picker (issue [#16](https://github.com/ArtluxDM/SnipForge/issues/16))
+
+Closes the gap between GitHub and local library behavior. When you open a repo root as a local library, the manifest is often in a subdirectory — but the current implementation only checks the folder root (`path.join(folderPath, '.snipforge.json')`), so it misses the manifest entirely and asks the user to init.
+
+**Problem:**
+- `scanLocalFolder()` comment even says "non-recursive — must be at root"
+- GitHub discovery finds manifests anywhere in a repo tree via REST recursive tree call
+- Local discovery does not — misses any manifest not at the exact folder root
+- Multi-library picker exists for GitHub repos but has no local equivalent
+
+**Plan:**
+
+Add `findManifests(rootPath, maxDepth)` — recursive walker that returns all `.snipforge.json` paths found under a root directory. Skips `node_modules` and hidden directories. maxDepth = 5 to avoid runaway traversal.
+
+Update `openLocalFolder` to use it when the root check fails:
+- 0 manifests found → add as uninitialized (current behavior, unchanged)
+- 1 manifest found anywhere → use its parent directory as the effective library root, proceed normally
+- Multiple manifests found → return `{ needsPick: true, libraries: DiscoveredLibrary[] }`, mirror GitHub flow
+
+`DiscoveredLibrary.path` for local = full absolute path to the directory containing the manifest (passed back to `openLocalFolder` when the user picks).
+
+**Files to change:**
+
+| File | Change |
+|------|--------|
+| `electron/main/local-library.ts` | Add `findManifests()`, update `openLocalFolder` return type + logic, extract `addLibraryFromScan()` helper to avoid duplication |
+| `electron/main/index.ts` | `library:openLocal` handler accepts optional `folderPath` arg (skips dialog when picker re-invokes), forwards `needsPick` response |
+| `electron/preload/index.ts` | Update `openLocal(folderPath?: string)` signature + type declaration |
+| `src/components/SettingsModal.vue` | Handle `needsPick` in `handleOpenLocalFolder`, add `type: 'github' \| 'local'` to `libraryPicker` state, update `handlePickLibrary` to call `openLocal(lib.path)` for local or `subscribe(repoUrl, lib.path)` for GitHub, update picker modal copy ("This repo" → "This folder" for local type) |
+
+**Verification:**
+1. Open a repo root that has `.snipforge.json` in a subdirectory → library detected + synced, no "Init" prompt
+2. Open a folder with manifest at root → unchanged behavior
+3. Open a folder with multiple manifests → picker modal appears with library names, paths, command counts
+4. Pick from the picker → correct subdirectory subscribed, commands appear
+5. Open a folder with no manifest anywhere → adds as uninitialized with Init button (unchanged)
+6. Already-added check works correctly for the subdir path (not the root path)

@@ -99,16 +99,22 @@ pnpm build        # production build
 
 ### Release Process
 
-Use the Release Manager Agent for automated releases:
-
+**Option 1 — Release Manager Agent** (recommended, use in a Claude session):
 ```
 "Use the release manager agent to create an auto release"
 "Check release status using the release manager"
 ```
+Analyzes commits, determines version bump from conventional commits, generates changelog, runs a local build to verify the app doesn't crash, tags, pushes, monitors CI, and publishes the release. Full lifecycle, no manual steps.
 
-The agent analyzes commits, determines version bump, generates changelog, tags, pushes, and monitors the build. See `.claude/README.md` for details.
+**Option 2 — Release script** (standalone, no session needed):
+```bash
+./scripts/release.sh          # patch bump
+./scripts/release.sh minor    # minor bump
+./scripts/release.sh major    # major bump
+```
+Bumps `package.json`, commits, tags, and pushes. No build verification or changelog — use when you're confident in the code. Go to GitHub Releases to publish the draft after CI finishes.
 
-**Manual release:** bump `package.json` version, commit, `git tag vX.Y.Z`, push with `--tags`. GitHub Actions builds all platforms and creates a draft release.
+In both cases, GitHub Actions builds for macOS, Windows, and Linux in parallel and attaches all artifacts to a draft release.
 
 **Build config:** `electron-builder.json5` (not package.json). Always do clean builds when switching dev → production.
 
