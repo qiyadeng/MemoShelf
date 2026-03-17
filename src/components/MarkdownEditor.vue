@@ -62,9 +62,55 @@
 import { ref, onMounted, watch, onUnmounted } from 'vue'
 import { EditorView, basicSetup } from 'codemirror'
 import { EditorState } from '@codemirror/state'
+import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
+import { MatchDecorator, ViewPlugin, Decoration } from '@codemirror/view'
+import type { DecorationSet, ViewUpdate } from '@codemirror/view'
+import { tags } from '@lezer/highlight'
 import { markdown } from '@codemirror/lang-markdown'
 import { Bold, Italic, Link, Image, List, ListOrdered } from 'lucide-vue-next'
 import { theme } from '../utils/theme'
+
+const highlightStyle = HighlightStyle.define([
+  { tag: [tags.keyword, tags.controlKeyword, tags.operatorKeyword, tags.definitionKeyword, tags.moduleKeyword], color: '#c678dd' },
+  { tag: [tags.string, tags.special(tags.string), tags.regexp], color: '#98c379' },
+  { tag: tags.comment, color: '#5c6370', fontStyle: 'italic' },
+  { tag: [tags.number, tags.integer, tags.float], color: '#d19a66' },
+  { tag: [tags.bool, tags.null, tags.self], color: '#d19a66' },
+  { tag: [tags.typeName, tags.className, tags.namespace, tags.definition(tags.typeName)], color: '#e5c07b' },
+  { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: '#61afef' },
+  { tag: [tags.definition(tags.variableName), tags.definition(tags.propertyName)], color: '#e06c75' },
+  { tag: [tags.operator, tags.arithmeticOperator, tags.logicOperator, tags.bitwiseOperator, tags.compareOperator], color: '#56b6c2' },
+  { tag: tags.tagName, color: '#e06c75' },
+  { tag: tags.attributeName, color: '#d19a66' },
+  { tag: tags.attributeValue, color: '#98c379' },
+  { tag: tags.propertyName, color: '#e06c75' },
+  { tag: [tags.punctuation, tags.separator], color: '#abb2bf' },
+  { tag: tags.url, color: '#98c379', textDecoration: 'underline' },
+  { tag: [tags.meta, tags.documentMeta], color: '#abb2bf' },
+  { tag: tags.heading, color: '#e06c75', fontWeight: 'bold' },
+  { tag: tags.emphasis, fontStyle: 'italic' },
+  { tag: tags.strong, fontWeight: 'bold' },
+  { tag: tags.link, color: '#61afef', textDecoration: 'underline' },
+  { tag: tags.strikethrough, textDecoration: 'line-through' },
+])
+
+const varDecorator = new MatchDecorator({
+  regexp: /\{\{\s*[a-zA-Z0-9][a-zA-Z0-9 _-]*\s*\}\}/g,
+  decoration: Decoration.mark({ class: 'cm-snipforge-variable' })
+})
+
+const snipforgeVariables = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet
+    constructor(view: EditorView) {
+      this.decorations = varDecorator.createDeco(view)
+    }
+    update(update: ViewUpdate) {
+      this.decorations = varDecorator.updateDeco(update, this.decorations)
+    }
+  },
+  { decorations: v => v.decorations }
+)
 
 interface Props {
   modelValue: string
@@ -133,6 +179,8 @@ onMounted(() => {
   const state = EditorState.create({
     doc: props.modelValue,
     extensions: [
+      snipforgeVariables,
+      syntaxHighlighting(highlightStyle),
       basicSetup,
       markdown(),
       EditorView.updateListener.of((update) => {
@@ -153,11 +201,11 @@ onMounted(() => {
         '.cm-cursor': {
           borderLeftColor: theme.accent
         },
-        '.cm-selectionBackground, ::selection': {
-          backgroundColor: `${theme.bgHover} !important`
+        '.cm-selectionBackground': {
+          backgroundColor: 'rgba(236, 80, 2, 0.25) !important'
         },
-        '&.cm-focused .cm-selectionBackground, &.cm-focused ::selection': {
-          backgroundColor: `${theme.bgHover} !important`
+        '&.cm-focused .cm-selectionBackground': {
+          backgroundColor: 'rgba(236, 80, 2, 0.45) !important'
         },
         '.cm-gutters': {
           backgroundColor: theme.bgInput,
@@ -165,10 +213,14 @@ onMounted(() => {
           border: 'none'
         },
         '.cm-activeLineGutter': {
-          backgroundColor: theme.bgSurface
+          backgroundColor: 'rgba(255, 255, 255, 0.04)'
         },
         '.cm-activeLine': {
-          backgroundColor: theme.bgSurface
+          backgroundColor: 'rgba(255, 255, 255, 0.04)'
+        },
+        '.cm-snipforge-variable': {
+          color: '#e8a948 !important',
+          fontWeight: '500'
         }
       })
     ]

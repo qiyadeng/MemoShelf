@@ -14,7 +14,11 @@ kubectl get pods -n {{namespace}} -o wide
 ssh {{user}}@{{host}} -p {{port}}
 ```
 
-Variable names support letters, numbers, spaces, hyphens, and underscores. Names are case-sensitive and trimmed of leading/trailing whitespace.
+Variable names support **letters, numbers, spaces, hyphens, and underscores only**. Names are case-sensitive and trimmed of leading/trailing whitespace.
+
+> **Symbols like `.` and `/` are not supported in variable names.** `{{my.var}}` or `{{my/var}}` will not be detected — they pass through as literal text. This is intentional: dots and other symbols would cause false matches against Go templates (`{{.Name}}`), Handlebars, Mustache, and similar syntaxes that users store as snippets. Use camelCase, snake_case, or spaced names instead:
+> - ✅ `{{myVar}}`, `{{my_var}}`, `{{my var}}`, `{{my-var}}`
+> - ❌ `{{my.var}}`, `{{my/var}}`, `{{my|var}}`
 
 ### Copy Flow
 

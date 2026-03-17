@@ -201,7 +201,7 @@
 
   // Helper to determine editor type
   const isCodeLanguage = (language: string): boolean => {
-    const codeLangs = ['yaml', 'javascript', 'typescript', 'python', 'html', 'css', 'bash', 'json', 'sql', 'go', 'rust', 'java']
+    const codeLangs = ['plaintext', 'yaml', 'javascript', 'typescript', 'python', 'html', 'css', 'bash', 'json', 'sql', 'go', 'rust', 'java']
     return codeLangs.includes(language)
   }
 
