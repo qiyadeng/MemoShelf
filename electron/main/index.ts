@@ -712,6 +712,7 @@ ipcMain.handle('library:unsubscribe', async (_, libraryId: number) => {
   }
   try {
     github.unsubscribeFromLibrary(libraryId)
+    localLibrary.refreshFileWatchers()
     return { success: true }
   } catch (error) {
     console.error('Library unsubscribe error:', error)
@@ -802,6 +803,7 @@ ipcMain.handle('library:init', async (_, libraryId: number, name: string, descri
     const { library, syncResult } = lib.type === 'local'
       ? await localLibrary.initLocalLibrary(libraryId, name.trim(), (description || '').trim())
       : await github.initLibrary(libraryId, name.trim(), (description || '').trim(), subpath)
+    localLibrary.refreshFileWatchers()
     return { success: true, library, syncResult }
   } catch (error) {
     console.error('Library init error:', error)
@@ -915,6 +917,7 @@ ipcMain.handle('library:openLocal', async () => {
     }
     const folderPath = result.filePaths[0]
     const { library, syncResult } = await localLibrary.openLocalFolder(folderPath)
+    localLibrary.refreshFileWatchers()
     return { success: true, library, syncResult }
   } catch (error) {
     console.error('Library openLocal error:', error)
@@ -1099,6 +1102,12 @@ app.whenReady().then(() => {
   createWindow()
   createTray()
   startAutoSync() // Start if library.autoSync is enabled
+  localLibrary.startFileWatchers()
+  localLibrary.onFileWatcherSync((_libraryId, result) => {
+    if ((result.added || result.updated || result.removed) && win && !win.isDestroyed()) {
+      win.webContents.send('commands:changed')
+    }
+  })
   updater.setWindow(win)
   updater.startUpdateChecker()
 })
@@ -1110,6 +1119,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('will-quit', () => {
+  localLibrary.stopFileWatchers()
   stopAutoSync()
   updater.stopUpdateChecker()
   globalShortcut.unregisterAll()

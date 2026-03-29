@@ -1,4 +1,4 @@
-import { promises as fs } from 'node:fs'
+import { promises as fs, watch, type FSWatcher } from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import crypto from 'node:crypto'
@@ -369,4 +369,215 @@ export async function exportAsLibrary(input: ExportLibraryInput): Promise<string
     await fs.rm(libraryDir, { recursive: true, force: true })
 
     return zipPath
+}
+
+// ── File Watcher ────────────────────────────────────────────────
+
+const watchers = new Map<number, FSWatcher>()
+const pendingChanges = new Map<number, Set<string>>()
+const debounceTimers = new Map<number, ReturnType<typeof setTimeout>>()
+
+const DEBOUNCE_MS = 2000
+
+let onChangeCallback: ((libraryId: number, result: SyncResult) => void) | null = null
+
+/** Register a callback that fires after a file-watcher sync completes */
+export function onFileWatcherSync(cb: (libraryId: number, result: SyncResult) => void): void {
+    onChangeCallback = cb
+}
+
+/** Read and validate a single command JSON file. Returns null if invalid. */
+async function readCommandFile(filePath: string): Promise<RemoteCommand | null> {
+    try {
+        const content = await fs.readFile(filePath, 'utf8')
+        const parsed = JSON.parse(content)
+        if (
+            typeof parsed.title === 'string' && parsed.title.trim() &&
+            typeof parsed.body === 'string' && parsed.body.trim()
+        ) {
+            return {
+                title: parsed.title,
+                body: parsed.body,
+                description: parsed.description || '',
+                tags: Array.isArray(parsed.tags) ? parsed.tags : [],
+                language: parsed.language || 'plaintext',
+                created_at: parsed.created_at || new Date().toISOString(),
+                updated_at: parsed.updated_at || new Date().toISOString(),
+            }
+        }
+    } catch {
+        // Invalid JSON or unreadable — skip
+    }
+    return null
+}
+
+/** Process batched file changes for a single library */
+async function processBatch(libraryId: number): Promise<void> {
+    const filenames = pendingChanges.get(libraryId)
+    if (!filenames || filenames.size === 0) return
+    pendingChanges.delete(libraryId)
+
+    const library = db.getAllLibraries().find(l => l.id === libraryId)
+    if (!library || library.type !== 'local' || !library.manifest_path) return
+
+    const folderPath = library.github_repo
+    const existingCommands = db.getRemoteCommands(libraryId)
+    const existingByPath = new Map(existingCommands.map(c => [c.remote_path, c]))
+    const localBodies = db.getLocalCommandBodies()
+
+    const toAdd: Array<{ remotePath: string; command: { title: string; body: string; description: string; tags: string; language: string; created_at: string; updated_at: string } }> = []
+    const toUpdate: Array<{ remotePath: string; command: { title: string; body: string; description: string; tags: string; language: string; updated_at: string } }> = []
+    const toRemove: string[] = []
+
+    for (const filename of filenames) {
+        if (filename === '.snipforge.json') continue
+
+        const filePath = path.join(folderPath, filename)
+        const existing = existingByPath.get(filename)
+
+        // Check if file still exists
+        let fileExists = false
+        try {
+            await fs.access(filePath)
+            fileExists = true
+        } catch {
+            // File was deleted
+        }
+
+        if (!fileExists) {
+            // Deletion: remove if we had it in DB
+            if (existing) {
+                toRemove.push(filename)
+            }
+            continue
+        }
+
+        // File exists — read and validate
+        const command = await readCommandFile(filePath)
+        if (!command) continue
+
+        const dbCommand = {
+            title: command.title,
+            body: command.body,
+            description: command.description,
+            tags: JSON.stringify(command.tags),
+            language: command.language,
+            created_at: command.created_at,
+            updated_at: command.updated_at,
+        }
+
+        if (!existing) {
+            // New file — add (skip if body already exists locally)
+            if (localBodies.has(command.body.trim())) continue
+            toAdd.push({ remotePath: filename, command: dbCommand })
+        } else {
+            // Existing file changed — update if newer
+            if (command.updated_at > (existing.updated_at || '')) {
+                toUpdate.push({
+                    remotePath: filename,
+                    command: {
+                        title: dbCommand.title,
+                        body: dbCommand.body,
+                        description: dbCommand.description,
+                        tags: dbCommand.tags,
+                        language: dbCommand.language,
+                        updated_at: dbCommand.updated_at,
+                    }
+                })
+            }
+        }
+    }
+
+    if (toAdd.length === 0 && toUpdate.length === 0 && toRemove.length === 0) return
+
+    // Compute new SHA from full scan for consistency
+    const scanResult = await scanLocalFolder(folderPath)
+    const sha = computeContentHash(scanResult.commands)
+
+    const result = db.syncRemoteCommands(libraryId, sha, toAdd, toUpdate, toRemove)
+    console.log(`File watcher: synced library ${library.name} — +${result.added} ~${result.updated} -${result.removed}`)
+
+    if (onChangeCallback) {
+        onChangeCallback(libraryId, result)
+    }
+}
+
+/** Start watching a single local library folder */
+function watchLibrary(library: Library): void {
+    if (watchers.has(library.id)) return
+    if (library.type !== 'local' || !library.manifest_path) return
+
+    const folderPath = library.github_repo
+
+    try {
+        const watcher = watch(folderPath, (eventType, filename) => {
+            if (!filename || !filename.endsWith('.json')) return
+
+            // Accumulate changed filenames
+            if (!pendingChanges.has(library.id)) {
+                pendingChanges.set(library.id, new Set())
+            }
+            pendingChanges.get(library.id)!.add(filename)
+
+            // Reset debounce timer
+            const existing = debounceTimers.get(library.id)
+            if (existing) clearTimeout(existing)
+            debounceTimers.set(library.id, setTimeout(() => {
+                debounceTimers.delete(library.id)
+                processBatch(library.id).catch(e => {
+                    console.error(`File watcher error for library ${library.name}:`, e)
+                })
+            }, DEBOUNCE_MS))
+        })
+
+        watchers.set(library.id, watcher)
+        console.log(`File watcher: watching ${library.name} at ${folderPath}`)
+    } catch (e) {
+        console.error(`File watcher: failed to watch ${library.name}:`, e)
+    }
+}
+
+/** Start file watchers for all initialized local libraries */
+export function startFileWatchers(): void {
+    stopFileWatchers()
+    const libraries = db.getAllLibraries()
+    for (const library of libraries) {
+        watchLibrary(library)
+    }
+}
+
+/** Stop all file watchers and clear pending state */
+export function stopFileWatchers(): void {
+    for (const [id, watcher] of watchers) {
+        watcher.close()
+    }
+    watchers.clear()
+    for (const timer of debounceTimers.values()) {
+        clearTimeout(timer)
+    }
+    debounceTimers.clear()
+    pendingChanges.clear()
+}
+
+/** Refresh watchers — call after adding/removing a local library */
+export function refreshFileWatchers(): void {
+    const libraries = db.getAllLibraries()
+    const localLibraryIds = new Set(
+        libraries.filter(l => l.type === 'local' && l.manifest_path).map(l => l.id)
+    )
+
+    // Stop watchers for removed libraries
+    for (const id of watchers.keys()) {
+        if (!localLibraryIds.has(id)) {
+            watchers.get(id)?.close()
+            watchers.delete(id)
+        }
+    }
+
+    // Start watchers for new libraries
+    for (const library of libraries) {
+        if (!watchers.has(library.id)) {
+            watchLibrary(library)
+        }
+    }
 }

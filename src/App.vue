@@ -231,6 +231,11 @@ onMounted(() => {
         }
       }, 100)
     })
+
+    // Reload commands when file watcher detects library changes
+    window.electronAPI.onCommandsChanged(() => {
+      loadCommands()
+    })
   }
 })
 

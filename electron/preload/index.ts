@@ -28,6 +28,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onWindowShown: (callback: () => void) => {
     ipcRenderer.on('window-shown', callback)
   },
+  onCommandsChanged: (callback: () => void) => {
+    ipcRenderer.on('commands:changed', callback)
+    return () => { ipcRenderer.removeAllListeners('commands:changed') }
+  },
   // file operations
   file: {
     saveDialog: (defaultFilename: string): Promise<{success: boolean, filePath: string | null}> =>
@@ -147,6 +151,7 @@ declare global {
         showInputDialog: (title: string, label: string, defaultValue?: string) => Promise<{success: boolean, value: string | null}>
       },
       onWindowShown: (callback: () => void) => void,
+      onCommandsChanged: (callback: () => void) => () => void,
       file: {
         saveDialog: (defaultFilename: string) => Promise<{success: boolean, filePath: string | null}>
         openDialog: () => Promise<{success: boolean, filePath: string | null}>
