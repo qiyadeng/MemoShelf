@@ -120,6 +120,18 @@ SnipForge/
 
 ## Active Notes
 
+### Issue #21: file-backed command CRUD safe rename hardening
+
+Plan:
+- keep local-library command files as the canonical write target for create/edit/delete flows
+- rename the backing JSON file when a title change produces a new slug, but only to a safe unique path
+- preserve stable command-file identity and add regression coverage for rename and collision cases
+
+Final notes:
+- `electron/main/local-library.ts` now re-slugs file-backed local command filenames on title changes and resolves collisions without regenerating the command-file `id`
+- local-library updates preserve the existing command metadata while moving the file to its new path before reindexing
+- regression coverage now locks rename-on-edit behavior for both direct renames and collision-safe fallback filenames
+
 ### Issue #33: use shared export utility for bulk export
 
 Plan:

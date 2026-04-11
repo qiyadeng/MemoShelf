@@ -95,12 +95,20 @@ async function writeCommandFile(
     )
 }
 
-async function findUniqueCommandFileName(folderPath: string, title: string): Promise<string> {
+async function findUniqueCommandFileName(
+    folderPath: string,
+    title: string,
+    options: { excludeFileName?: string } = {}
+): Promise<string> {
     const baseName = slugify(title)
     let counter = 0
 
     while (true) {
         const fileName = counter === 0 ? `${baseName}.json` : `${baseName}-${counter + 1}.json`
+        if (fileName === options.excludeFileName) {
+            return fileName
+        }
+
         try {
             await fs.access(path.join(folderPath, fileName))
             counter += 1
@@ -108,6 +116,14 @@ async function findUniqueCommandFileName(folderPath: string, title: string): Pro
             return fileName
         }
     }
+}
+
+async function resolveUpdatedCommandFileName(
+    folderPath: string,
+    currentFileName: string,
+    nextTitle: string
+): Promise<string> {
+    return findUniqueCommandFileName(folderPath, nextTitle, { excludeFileName: currentFileName })
 }
 
 function resolveFileBackedLocalCommand(commandId: number): { command: db.Command; library: Library } | null {
@@ -376,7 +392,9 @@ export async function updateLocalLibraryCommand(commandId: number, updates: Comm
         return { success, mode: 'database' }
     }
 
-    const filePath = path.join(target.library.github_repo, target.command.remote_path)
+    const currentFileName = target.command.remote_path
+    const nextFileName = await resolveUpdatedCommandFileName(target.library.github_repo, currentFileName, updates.title)
+    const filePath = path.join(target.library.github_repo, currentFileName)
     const existing = await fs.readFile(filePath, 'utf8').then(content => JSON.parse(content) as {
         id?: string
         created_at?: string
@@ -386,13 +404,36 @@ export async function updateLocalLibraryCommand(commandId: number, updates: Comm
         throw new Error('Command file not found')
     }
 
+    if (nextFileName !== currentFileName) {
+        await fs.rename(filePath, path.join(target.library.github_repo, nextFileName))
+    }
+
     await writeCommandFile(
         target.library.github_repo,
-        target.command.remote_path,
+        nextFileName,
         updates,
         existing.created_at || target.command.created_at,
         normalizeCommandId(existing.id) || createCommandId()
     )
+
+    const updatedFile = await fs.readFile(path.join(target.library.github_repo, nextFileName), 'utf8')
+        .then(content => JSON.parse(content))
+    const indexed = toIndexedLibraryCommandData(updatedFile)
+    const updated = db.updateRemoteCommandById(commandId, {
+        remote_path: nextFileName,
+        title: indexed.title,
+        body: indexed.body,
+        description: indexed.description,
+        tags: indexed.tags,
+        language: indexed.language,
+        created_at: existing.created_at || target.command.created_at,
+        updated_at: indexed.updated_at,
+    })
+
+    if (!updated) {
+        throw new Error('Failed to update indexed command after file write')
+    }
+
     const syncResult = await syncLocalLibrary(target.library.id, true)
     const updatedLibrary = db.getAllLibraries().find(l => l.id === target.library.id) || target.library
     return { success: true, mode: 'library', library: updatedLibrary, syncResult }

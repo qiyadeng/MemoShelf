@@ -272,7 +272,7 @@ describe('local library CRUD', () => {
         expect(db.getAllLibraries()).toHaveLength(0)
     })
 
-    it('writes created commands to disk with a stable id, then updates and deletes the same file', async () => {
+    it('writes created commands to disk with a stable id, safely renames on title change, then deletes the file', async () => {
         const setup = await setupDefaultWritableLocalLibrary(tmpDir)
         const createResult = await createLocalLibraryCommand({
             title: '  Git Commit  ',
@@ -310,7 +310,13 @@ describe('local library CRUD', () => {
         expect(updateResult.success).toBe(true)
         expect(updateResult.mode).toBe('library')
 
-        const updatedFile = JSON.parse(await fs.readFile(path.join(tmpDir, commandPath), 'utf8'))
+        const updatedCommands = db.getRemoteCommands(setup.library.id)
+        expect(updatedCommands).toHaveLength(1)
+        const renamedPath = updatedCommands[0].remote_path as string
+        expect(renamedPath).toBe('git-commit-updated.json')
+        await expect(fs.access(path.join(tmpDir, commandPath))).rejects.toThrow()
+
+        const updatedFile = JSON.parse(await fs.readFile(path.join(tmpDir, renamedPath), 'utf8'))
         expect(updatedFile.id).toBe(createdFile.id)
         expect(updatedFile.title).toBe('Git Commit Updated')
         expect(updatedFile.body).toBe('git commit --amend')
@@ -318,8 +324,50 @@ describe('local library CRUD', () => {
         const deleteResult = await deleteLocalLibraryCommand(commandId)
         expect(deleteResult.success).toBe(true)
         expect(deleteResult.mode).toBe('library')
-        await expect(fs.access(path.join(tmpDir, commandPath))).rejects.toThrow()
+        await expect(fs.access(path.join(tmpDir, renamedPath))).rejects.toThrow()
         expect(db.getRemoteCommands(setup.library.id)).toHaveLength(0)
+    })
+
+    it('uses a suffixed filename when a title-change rename would collide', async () => {
+        const setup = await setupDefaultWritableLocalLibrary(tmpDir)
+
+        await createLocalLibraryCommand({
+            title: 'Git Commit Updated',
+            body: 'git commit --amend',
+            description: 'existing',
+            tags: '["git"]',
+            language: 'bash',
+        })
+
+        await createLocalLibraryCommand({
+            title: 'Git Commit',
+            body: 'git commit -m "msg"',
+            description: 'rename me',
+            tags: '["git"]',
+            language: 'bash',
+        })
+
+        const existingCommands = db.getRemoteCommands(setup.library.id)
+        const commandToRename = existingCommands.find(command => command.title === 'Git Commit')
+        expect(commandToRename).toBeTruthy()
+
+        const updateResult = await updateLocalLibraryCommand(commandToRename!.id, {
+            title: 'Git Commit Updated',
+            body: 'git commit --fixup HEAD',
+            description: 'renamed with collision',
+            tags: '["git", "fixup"]',
+            language: 'bash',
+        })
+
+        expect(updateResult.success).toBe(true)
+
+        const commands = db.getRemoteCommands(setup.library.id)
+        const renamed = commands.find(command => command.body === 'git commit --fixup HEAD')
+        expect(renamed?.remote_path).toBe('git-commit-updated-2.json')
+
+        const renamedFile = JSON.parse(await fs.readFile(path.join(tmpDir, renamed!.remote_path as string), 'utf8'))
+        expect(renamedFile.title).toBe('Git Commit Updated')
+        expect(renamedFile.body).toBe('git commit --fixup HEAD')
     })
 
     it('batches command creation into a single local-library sync', async () => {

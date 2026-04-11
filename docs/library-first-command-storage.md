@@ -269,6 +269,20 @@ Verification:
 - app reload or reindex preserves those commands from files
 - no command is lost if the cache DB is rebuilt
 
+Issue #21 plan:
+
+- keep command-file `id` stable across create, edit, rename, and reindex flows
+- rename command files on title change when the target slug/path is safe, while preserving command identity
+- keep collision handling deterministic with `-2`, `-3`, etc. suffixes during create and rename
+- add regression coverage for title-change renames and collision-safe fallback paths
+
+Issue #21 final notes:
+
+- local-library create/edit/delete now treat the command file as the canonical write target for writable local libraries
+- command-file `id` stays stable on update, including title-driven file renames
+- title edits now safely rename the backing JSON file when the slug changes, and fall back to suffixed filenames on collisions
+- regression coverage now verifies rename-on-title-change behavior and collision handling for file-backed local commands
+
 Issue #26 plan:
 
 - introduce one shared normalization boundary for library-backed command writes

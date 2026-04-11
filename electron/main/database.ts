@@ -411,6 +411,29 @@ export function updateRemoteCommand(
     return result.changes > 0
 }
 
+export function updateRemoteCommandById(
+    id: number,
+    updates: { remote_path: string; title: string; body: string; description: string; tags: string; language: string; created_at: string; updated_at: string }
+): boolean {
+    if (!db) throw new Error("Database not initialized")
+    const result = db.prepare(`
+        UPDATE commands
+        SET remote_path = ?, title = ?, body = ?, description = ?, tags = ?, language = ?, created_at = ?, updated_at = ?
+        WHERE id = ? AND source = 'remote'
+    `).run(
+        updates.remote_path,
+        updates.title,
+        updates.body,
+        updates.description,
+        updates.tags,
+        updates.language,
+        updates.created_at,
+        updates.updated_at,
+        id
+    )
+    return result.changes > 0
+}
+
 export function deleteRemoteCommand(libraryId: number, remotePath: string): boolean {
     if (!db) throw new Error("Database not initialized")
     const result = db.prepare(
