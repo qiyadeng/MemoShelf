@@ -61,6 +61,8 @@ interface Window {
       sync: (libraryId: number) => Promise<{ success: boolean; added?: number; updated?: number; removed?: number; errors?: string[]; error?: string }>
       syncAll: () => Promise<{ success: boolean; results?: any[]; error?: string }>
       getAll: () => Promise<any[]>
+      getDefaultWritableLocalLibrary: () => Promise<{ success: boolean; library: any | null; error?: string }>
+      setupDefaultWritableLocalLibrary: () => Promise<{ success: boolean; library?: any; syncResult?: any; cancelled?: boolean; error?: string }>
       browse: (repoUrl: string) => Promise<{ success: boolean; manifest?: any; commands?: any[]; error?: string }>
       openLocal: () => Promise<{ success: boolean; library?: any; syncResult?: any; error?: string }>
       init: (libraryId: number, name: string, description: string, subpath?: string) => Promise<{ success: boolean; library?: any; syncResult?: any; error?: string }>

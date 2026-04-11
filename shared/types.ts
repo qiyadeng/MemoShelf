@@ -105,3 +105,17 @@ export interface UpdateStatus {
   releaseUrl: string          // snipforge.dev download page
   lastChecked: string | null  // ISO timestamp
 }
+
+export interface DefaultWritableLibraryResult {
+  success: boolean
+  library: Library | null
+  error?: string
+}
+
+export interface DefaultWritableLibrarySetupResult {
+  success: boolean
+  library?: Library
+  syncResult?: SyncResult
+  cancelled?: boolean
+  error?: string
+}

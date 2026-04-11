@@ -925,6 +925,37 @@ ipcMain.handle('library:openLocal', async () => {
   }
 })
 
+ipcMain.handle('library:getDefaultWritableLocalLibrary', async () => {
+  try {
+    const library = localLibrary.getDefaultWritableLocalLibrary()
+    return { success: true, library }
+  } catch (error) {
+    console.error('Library default lookup error:', error)
+    return { success: false, library: null, error: (error as Error).message }
+  }
+})
+
+ipcMain.handle('library:setupDefaultWritableLocalLibrary', async () => {
+  if (!win) return { success: false, error: 'No window' }
+  try {
+    const result = await dialog.showOpenDialog(win, {
+      title: 'Choose Default Library Folder',
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    if (result.canceled || !result.filePaths[0]) {
+      return { success: false, cancelled: true, error: 'cancelled' }
+    }
+
+    const folderPath = result.filePaths[0]
+    const setup = await localLibrary.setupDefaultWritableLocalLibrary(folderPath)
+    localLibrary.refreshFileWatchers()
+    return { success: true, library: setup.library, syncResult: setup.syncResult }
+  } catch (error) {
+    console.error('Library setupDefaultWritableLocalLibrary error:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
 ipcMain.handle('library:exportZip', async (_, commandIds: number[], name: string, description: string) => {
   if (!win) return { success: false, error: 'No window' }
   try {

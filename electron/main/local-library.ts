@@ -4,6 +4,7 @@ import os from 'node:os'
 import crypto from 'node:crypto'
 import AdmZip from 'adm-zip'
 import * as db from './database'
+import * as settings from './settings'
 import type { Library, LibraryManifest, RemoteCommand, SyncResult } from '../../shared/types'
 
 // ── Local Folder Scanning ────────────────────────────────────────
@@ -12,6 +13,143 @@ interface ScanResult {
     manifest: LibraryManifest
     manifestPath: string
     commands: Array<{ path: string; command: RemoteCommand }>
+}
+
+function deriveLibraryName(folderPath: string): string {
+    const folderName = path.basename(folderPath)
+        .replace(/[-_]/g, ' ')
+        .trim()
+
+    const humanized = folderName.replace(/\b\w/g, c => c.toUpperCase())
+    return humanized || 'Local Library'
+}
+
+function isInitializedLocalLibrary(library: Library | undefined): library is Library {
+    return !!library && library.type === 'local' && !!library.manifest_path
+}
+
+export function getDefaultWritableLocalLibrary(): Library | null {
+    const preferredId = settings.get<number | null>('library.defaultWritableLocalLibraryId')
+    if (typeof preferredId === 'number') {
+        const preferred = db.getAllLibraries().find(l => l.id === preferredId)
+        if (isInitializedLocalLibrary(preferred)) {
+            return preferred
+        }
+    }
+
+    const fallback = db.getAllLibraries().find(isInitializedLocalLibrary)
+    if (fallback) {
+        settings.set('library.defaultWritableLocalLibraryId', fallback.id)
+        return fallback
+    }
+
+    return null
+}
+
+export function setDefaultWritableLocalLibrary(libraryId: number): void {
+    settings.set('library.defaultWritableLocalLibraryId', libraryId)
+}
+
+async function readFolderManifest(folderPath: string): Promise<ScanResult | null> {
+    try {
+        return await scanLocalFolder(folderPath)
+    } catch (e) {
+        const msg = (e as Error).message
+        if (!msg.includes('missing .snipforge.json')) throw e
+        return null
+    }
+}
+
+async function createManifestIfMissing(folderPath: string): Promise<ScanResult> {
+    const existing = await readFolderManifest(folderPath)
+    if (existing) return existing
+
+    const manifest: LibraryManifest = {
+        snipforge: 'library',
+        name: deriveLibraryName(folderPath),
+        description: '',
+        format_version: '1.0',
+    }
+
+    await fs.writeFile(
+        path.join(folderPath, '.snipforge.json'),
+        JSON.stringify(manifest, null, 2) + '\n',
+        'utf8'
+    )
+
+    return await scanLocalFolder(folderPath)
+}
+
+function buildLocalSyncPayload(commands: ScanResult['commands'], existingBodies: Set<string>) {
+    return commands
+        .filter(({ command }) => !existingBodies.has(command.body.trim()))
+        .map(({ path: filePath, command }) => ({
+            remotePath: filePath,
+            command: {
+                title: command.title,
+                body: command.body,
+                description: command.description || '',
+                tags: JSON.stringify(command.tags || []),
+                language: command.language || 'plaintext',
+                created_at: command.created_at || new Date().toISOString(),
+                updated_at: command.updated_at || new Date().toISOString(),
+            }
+        }))
+}
+
+async function indexLocalLibrary(folderPath: string, options: { ensureManifest: boolean; allowExisting: boolean }): Promise<{ library: Library; syncResult: SyncResult }> {
+    const stat = await fs.stat(folderPath)
+    if (!stat.isDirectory()) throw new Error('Not a directory')
+
+    const existing = db.getLibraryByRepo(folderPath)
+    if (existing && !options.allowExisting) {
+        throw new Error(`Already added: ${path.basename(folderPath)}`)
+    }
+
+    const scanResult = options.ensureManifest
+        ? await createManifestIfMissing(folderPath)
+        : await readFolderManifest(folderPath)
+
+    if (!scanResult) {
+        const folderName = deriveLibraryName(folderPath)
+        const libraryId = existing
+            ? existing.id
+            : db.addLibrary(folderPath, folderName, '', undefined, 'local', 'owner')
+        if (existing && !existing.manifest_path) {
+            db.updateLibraryManifest(libraryId, folderName, '', '.snipforge.json')
+        }
+        const library = db.getLibraryByRepo(folderPath)!
+        return { library, syncResult: { added: 0, updated: 0, removed: 0, errors: [] } }
+    }
+
+    const { manifest, manifestPath, commands } = scanResult
+    const libraryId = existing
+        ? existing.id
+        : db.addLibrary(folderPath, manifest.name, manifest.description || '', manifestPath, 'local', 'owner')
+
+    if (
+        existing &&
+        (
+            !existing.manifest_path ||
+            existing.name !== manifest.name ||
+            existing.description !== (manifest.description || '') ||
+            existing.manifest_path !== manifestPath
+        )
+    ) {
+        db.updateLibraryManifest(libraryId, manifest.name, manifest.description || '', manifestPath)
+    }
+
+    const localBodies = db.getLocalCommandBodies()
+    const toAdd = buildLocalSyncPayload(commands, localBodies)
+    const syncResult = db.syncRemoteCommands(
+        libraryId,
+        computeContentHash(commands),
+        toAdd,
+        [],
+        []
+    )
+    const library = db.getLibraryByRepo(folderPath)!
+    return { library, syncResult }
 }
 
 export async function scanLocalFolder(folderPath: string): Promise<ScanResult> {
@@ -183,12 +321,6 @@ export async function syncLocalLibrary(libraryId: number, force = false): Promis
 // ── Open Local Folder ────────────────────────────────────────────
 
 export async function openLocalFolder(folderPath: string): Promise<{ library: Library; syncResult: SyncResult }> {
-    // Check if already added
-    const existing = db.getLibraryByRepo(folderPath)
-    if (existing) {
-        throw new Error(`Already added: ${path.basename(folderPath)}`)
-    }
-
     // Check folder exists
     try {
         const stat = await fs.stat(folderPath)
@@ -198,48 +330,13 @@ export async function openLocalFolder(folderPath: string): Promise<{ library: Li
         throw new Error(`Folder not found: ${folderPath}`)
     }
 
-    // Try to scan — if no manifest, add as uninitialized
-    let scanResult: ScanResult | null = null
-    try {
-        scanResult = await scanLocalFolder(folderPath)
-    } catch (e) {
-        const msg = (e as Error).message
-        if (!msg.includes('missing .snipforge.json')) throw e
-    }
+    return indexLocalLibrary(folderPath, { ensureManifest: false, allowExisting: false })
+}
 
-    if (scanResult) {
-        const { manifest, manifestPath, commands } = scanResult
-        const sha = computeContentHash(commands)
-        const libraryId = db.addLibrary(folderPath, manifest.name, manifest.description || '', manifestPath, 'local', 'owner')
-
-        const localBodies = db.getLocalCommandBodies()
-        const toAdd = commands
-            .filter(({ command }) => !localBodies.has(command.body.trim()))
-            .map(({ path: filePath, command }) => ({
-                remotePath: filePath,
-                command: {
-                    title: command.title,
-                    body: command.body,
-                    description: command.description || '',
-                    tags: JSON.stringify(command.tags || []),
-                    language: command.language || 'plaintext',
-                    created_at: command.created_at || new Date().toISOString(),
-                    updated_at: command.updated_at || new Date().toISOString(),
-                }
-            }))
-
-        const syncResult = db.syncRemoteCommands(libraryId, sha, toAdd, [], [])
-        const library = db.getLibraryByRepo(folderPath)!
-        return { library, syncResult }
-    } else {
-        // No manifest — create as uninitialized
-        const folderName = path.basename(folderPath)
-            .replace(/[-_]/g, ' ')
-            .replace(/\b\w/g, c => c.toUpperCase())
-        db.addLibrary(folderPath, folderName, '', undefined, 'local', 'owner')
-        const library = db.getLibraryByRepo(folderPath)!
-        return { library, syncResult: { added: 0, updated: 0, removed: 0, errors: [] } }
-    }
+export async function setupDefaultWritableLocalLibrary(folderPath: string): Promise<{ library: Library; syncResult: SyncResult }> {
+    const result = await indexLocalLibrary(folderPath, { ensureManifest: true, allowExisting: true })
+    setDefaultWritableLocalLibrary(result.library.id)
+    return result
 }
 
 // ── Init Local Library ───────────────────────────────────────────

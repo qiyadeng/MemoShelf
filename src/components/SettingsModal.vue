@@ -299,6 +299,29 @@
               <span class="last-synced-text">Last synced: {{ lastSyncedDisplay }}</span>
             </div>
 
+            <div class="default-library-row">
+              <div class="default-library-copy">
+                <span class="default-library-label">Default writable library</span>
+                <span v-if="defaultWritableLibrary" class="default-library-value">
+                  {{ defaultWritableLibrary.name }} · {{ defaultWritableLibrary.type === 'local' ? shortenPath(defaultWritableLibrary.github_repo) : defaultWritableLibrary.github_repo }}
+                </span>
+                <span v-else class="default-library-value muted">
+                  Not configured yet
+                </span>
+                <span class="section-description">
+                  SnipForge remembers this local folder as the default writable library.
+                </span>
+              </div>
+              <button
+                class="open-folder-button"
+                @click="handleChooseDefaultWritableLibrary"
+                :disabled="defaultLibraryPicking"
+              >
+                {{ defaultLibraryPicking ? 'Choosing...' : defaultWritableLibrary ? 'Change Folder' : 'Choose Folder' }}
+              </button>
+            </div>
+            <p v-if="defaultLibraryError" class="library-error">{{ defaultLibraryError }}</p>
+
             <!-- Add library controls -->
             <div class="add-library-row">
               <!-- Subscribe to GitHub repo -->
@@ -1004,6 +1027,14 @@ const syncing = ref(false)
 const libraryError = ref('')
 const syncMessage = ref('')
 const syncMessageType = ref<'success' | 'error'>('success')
+const defaultLibraryPicking = ref(false)
+const defaultLibraryError = ref('')
+const defaultWritableLibrary = computed(() => {
+  const rawId = settings.value['library.defaultWritableLocalLibraryId']
+  const libraryId = typeof rawId === 'number' ? rawId : null
+  if (libraryId === null) return null
+  return libraries.value.find(lib => lib.id === libraryId && lib.type === 'local' && !!lib.manifest_path) || null
+})
 
 // ── Library Picker State ──────────────────────────────────────
 const libraryPicker = ref({
@@ -1037,6 +1068,30 @@ async function handlePickLibrary(lib: DiscoveredLibrary) {
     libraryError.value = (e as Error).message
   } finally {
     subscribing.value = false
+  }
+}
+
+async function handleChooseDefaultWritableLibrary() {
+  if (defaultLibraryPicking.value) return
+  defaultLibraryPicking.value = true
+  defaultLibraryError.value = ''
+
+  try {
+    const result = await (window.electronAPI as any).library.setupDefaultWritableLocalLibrary()
+    if (result.success && result.library) {
+      await updateSetting('library.defaultWritableLocalLibraryId', result.library.id)
+      await loadLibraries()
+      emit('libraries-changed')
+      syncMessage.value = `Default writable library set to ${result.library.name}`
+      syncMessageType.value = 'success'
+      clearSyncMessage()
+    } else if (!result.cancelled) {
+      defaultLibraryError.value = result.error || 'Failed to choose default library'
+    }
+  } catch (e) {
+    defaultLibraryError.value = (e as Error).message
+  } finally {
+    defaultLibraryPicking.value = false
   }
 }
 
@@ -2966,6 +3021,43 @@ const handleExportAsLibrary = () => {
 .last-synced-text {
   font-size: 11px;
   color: var(--text-muted);
+}
+
+.default-library-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg-elevated) 88%, transparent);
+}
+
+.default-library-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.default-library-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.default-library-value {
+  font-size: 14px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.default-library-value.muted {
+  color: var(--text-tertiary);
 }
 
 /* Library name row with auto-sync toggle */
