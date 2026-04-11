@@ -32,6 +32,7 @@ const DEFAULTS: Record<string, unknown> = {
   'general.windowState': null as WindowState | null,
   'library.autoSync': false, // master toggle for auto-sync
   'library.defaultWritableLocalLibraryId': null as number | null,
+  'library.legacyDbMigrationCompleted': false,
   'display.tagPills': true,
   'display.previewOnCopy': true,
   'shortcuts': { ...DEFAULT_SHORTCUTS },

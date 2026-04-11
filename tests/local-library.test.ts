@@ -3,9 +3,11 @@ import path from 'node:path'
 import os from 'node:os'
 import { promises as fs } from 'node:fs'
 import * as db from '../electron/main/database'
+import * as settings from '../electron/main/settings'
 import {
     createLocalLibraryCommand,
     deleteLocalLibraryCommand,
+    migrateLegacyDbOnlyCommandsToDefaultLibrary,
     reindexInitializedLocalLibraries,
     scanLocalFolder,
     setupDefaultWritableLocalLibrary,
@@ -328,5 +330,37 @@ describe('local library CRUD', () => {
         const rebuilt = db.getRemoteCommands(setup.library.id)
         expect(rebuilt[0].title).toBe('Disk Wins')
         expect(rebuilt[0].body).toBe('echo updated from disk')
+    })
+
+    it('migrates legacy DB-only commands into the default local library', async () => {
+        const setup = await setupDefaultWritableLocalLibrary(tmpDir)
+        db.addCommand({
+            title: 'Legacy Migrated Command',
+            body: 'echo migrate me',
+            description: 'from sqlite only',
+            tags: '["legacy", "migrate"]',
+            language: 'bash',
+            source: 'local',
+            library_id: null,
+            remote_path: null,
+        })
+
+        const result = await migrateLegacyDbOnlyCommandsToDefaultLibrary()
+
+        expect(result.completed).toBe(true)
+        expect(result.library?.id).toBe(setup.library.id)
+        expect(result.migrated).toBe(1)
+        expect(result.skipped).toBe(0)
+        expect(settings.get<boolean>('library.legacyDbMigrationCompleted')).toBe(true)
+        expect(db.getAllCommands().some(command => command.source === 'local' && command.body === 'echo migrate me')).toBe(false)
+
+        const remoteCommands = db.getRemoteCommands(setup.library.id)
+        expect(remoteCommands).toHaveLength(1)
+        const filePath = path.join(tmpDir, remoteCommands[0].remote_path as string)
+        const migratedFile = JSON.parse(await fs.readFile(filePath, 'utf8'))
+        expect(migratedFile.snipforge).toBe('command')
+        expect(migratedFile.id).toMatch(/^[0-9a-f-]{36}$/)
+        expect(migratedFile.title).toBe('Legacy Migrated Command')
+        expect(migratedFile.body).toBe('echo migrate me')
     })
 })

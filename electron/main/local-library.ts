@@ -102,8 +102,18 @@ function buildCommandFileData(command: CommandFormData, createdAt: string, id: s
     }
 }
 
-async function writeCommandFile(folderPath: string, fileName: string, command: CommandFormData, createdAt: string, id: string): Promise<void> {
+async function writeCommandFile(
+    folderPath: string,
+    fileName: string,
+    command: CommandFormData,
+    createdAt: string,
+    id: string,
+    updatedAt?: string
+): Promise<void> {
     const fileData = buildCommandFileData(command, createdAt, id)
+    if (updatedAt) {
+        fileData.updated_at = updatedAt
+    }
     await fs.writeFile(
         path.join(folderPath, fileName),
         JSON.stringify(fileData, null, 2) + '\n',
@@ -503,6 +513,66 @@ export async function reindexInitializedLocalLibraries(): Promise<Array<{ librar
     }
 
     return results
+}
+
+export async function migrateLegacyDbOnlyCommandsToDefaultLibrary(): Promise<{
+    migrated: number
+    skipped: number
+    library: Library | null
+    completed: boolean
+}> {
+    const legacyCommands = db.getLegacyDbOnlyCommands()
+    if (legacyCommands.length === 0) {
+        settings.set('library.legacyDbMigrationCompleted', true)
+        return { migrated: 0, skipped: 0, library: getDefaultWritableLocalLibrary(), completed: true }
+    }
+
+    const library = getDefaultWritableLocalLibrary()
+    if (!library) {
+        settings.set('library.legacyDbMigrationCompleted', false)
+        return { migrated: 0, skipped: 0, library: null, completed: false }
+    }
+
+    const scanResult = await scanLocalFolder(library.github_repo)
+    const existingBodies = new Set(scanResult.commands.map(({ command }) => command.body.trim()))
+
+    let migrated = 0
+    let skipped = 0
+
+    for (const legacy of legacyCommands) {
+        if (existingBodies.has(legacy.body.trim())) {
+            skipped += 1
+            continue
+        }
+
+        const fileName = await findUniqueCommandFileName(library.github_repo, legacy.title)
+        await writeCommandFile(
+            library.github_repo,
+            fileName,
+            {
+                title: legacy.title,
+                body: legacy.body,
+                description: legacy.description,
+                tags: legacy.tags,
+                language: legacy.language,
+            },
+            legacy.created_at,
+            createCommandId(),
+            legacy.updated_at
+        )
+        existingBodies.add(legacy.body.trim())
+        migrated += 1
+    }
+
+    const deleted = db.deleteCommandsByIds(legacyCommands.map(command => command.id))
+    if (deleted !== legacyCommands.length) {
+        settings.set('library.legacyDbMigrationCompleted', false)
+        throw new Error(`Legacy migration deleted ${deleted} of ${legacyCommands.length} DB-only commands`)
+    }
+
+    await syncLocalLibrary(library.id, true)
+    settings.set('library.legacyDbMigrationCompleted', true)
+    return { migrated, skipped, library, completed: true }
 }
 
 // ── Open Local Folder ────────────────────────────────────────────

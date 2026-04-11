@@ -246,6 +246,7 @@ async function createWindow() {
   // Initialize database when creating window
   db.initializeDatabase()
   db.seedTestData()
+  await localLibrary.migrateLegacyDbOnlyCommandsToDefaultLibrary()
   await localLibrary.reindexInitializedLocalLibraries()
 
   // Restore window state from settings

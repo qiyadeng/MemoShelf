@@ -179,6 +179,22 @@ export function deleteCommand(id: number): boolean {
     const result = stmt.run(id);
     return result.changes > 0;
 }
+
+export function deleteCommandsByIds(ids: number[]): number {
+    if (!db) throw new Error("Database not initialized");
+    if (ids.length === 0) return 0
+
+    const stmt = db.prepare("DELETE FROM commands WHERE id = ?")
+    const transaction = db.transaction((commandIds: number[]) => {
+        let deleted = 0
+        for (const id of commandIds) {
+            deleted += stmt.run(id).changes
+        }
+        return deleted
+    })
+
+    return transaction(ids)
+}
 // add a new command to DB
 const MAX_TITLE_LENGTH = 500
 
@@ -310,6 +326,13 @@ export function getRemoteCommands(libraryId: number): Command[] {
     return db.prepare(
         "SELECT * FROM commands WHERE library_id = ? AND source = 'remote'"
     ).all(libraryId) as Command[]
+}
+
+export function getLegacyDbOnlyCommands(): Command[] {
+    if (!db) throw new Error("Database not initialized")
+    return db.prepare(
+        "SELECT * FROM commands WHERE source = 'local' AND library_id IS NULL AND remote_path IS NULL ORDER BY created_at ASC"
+    ).all() as Command[]
 }
 
 export function addRemoteCommand(
