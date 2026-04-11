@@ -2,15 +2,25 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import path from 'node:path'
 import os from 'node:os'
 import { promises as fs } from 'node:fs'
-import { scanLocalFolder, slugify } from '../electron/main/local-library'
+import * as db from '../electron/main/database'
+import {
+    createLocalLibraryCommand,
+    deleteLocalLibraryCommand,
+    scanLocalFolder,
+    setupDefaultWritableLocalLibrary,
+    slugify,
+    updateLocalLibraryCommand,
+} from '../electron/main/local-library'
 
 let tmpDir: string
 
 beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'snipforge-test-lib-'))
+    db.initializeDatabase(path.join(tmpDir, 'test.db'))
 })
 
 afterEach(async () => {
+    db.closeDatabase()
     await fs.rm(tmpDir, { recursive: true, force: true })
 })
 
@@ -181,5 +191,82 @@ describe('scanLocalFolder', () => {
 
         const result = await scanLocalFolder(tmpDir)
         expect(result.commands).toHaveLength(0)
+    })
+})
+
+describe('local library CRUD', () => {
+    it('writes created commands to disk, then updates and deletes the same file', async () => {
+        const setup = await setupDefaultWritableLocalLibrary(tmpDir)
+        const createResult = await createLocalLibraryCommand({
+            title: 'Git Commit',
+            body: 'git commit -m "msg"',
+            description: 'Initial command',
+            tags: '["git", "commit"]',
+            language: 'bash',
+        })
+
+        expect(createResult.success).toBe(true)
+        expect(createResult.mode).toBe('library')
+
+        const createdCommands = db.getRemoteCommands(setup.library.id)
+        expect(createdCommands).toHaveLength(1)
+
+        const commandId = createdCommands[0].id
+        const commandPath = createdCommands[0].remote_path as string
+        const createdFile = JSON.parse(await fs.readFile(path.join(tmpDir, commandPath), 'utf8'))
+        expect(createdFile.snipforge).toBe('command')
+        expect(createdFile.title).toBe('Git Commit')
+        expect(createdFile.tags).toEqual(['git', 'commit'])
+
+        const updateResult = await updateLocalLibraryCommand(commandId, {
+            title: 'Git Commit Updated',
+            body: 'git commit --amend',
+            description: 'Updated command',
+            tags: '["git", "amend"]',
+            language: 'bash',
+        })
+
+        expect(updateResult.success).toBe(true)
+        expect(updateResult.mode).toBe('library')
+
+        const updatedFile = JSON.parse(await fs.readFile(path.join(tmpDir, commandPath), 'utf8'))
+        expect(updatedFile.title).toBe('Git Commit Updated')
+        expect(updatedFile.body).toBe('git commit --amend')
+
+        const deleteResult = await deleteLocalLibraryCommand(commandId)
+        expect(deleteResult.success).toBe(true)
+        expect(deleteResult.mode).toBe('library')
+        await expect(fs.access(path.join(tmpDir, commandPath))).rejects.toThrow()
+        expect(db.getRemoteCommands(setup.library.id)).toHaveLength(0)
+    })
+
+    it('falls back to database CRUD for legacy DB-only commands', async () => {
+        const commandId = db.addCommand({
+            title: 'Legacy Command',
+            body: 'echo legacy',
+            description: '',
+            tags: '[]',
+            language: 'bash',
+            source: 'local',
+            library_id: null,
+            remote_path: null,
+        })
+
+        const updateResult = await updateLocalLibraryCommand(commandId, {
+            title: 'Legacy Command Updated',
+            body: 'echo legacy updated',
+            description: 'still local',
+            tags: '["legacy"]',
+            language: 'bash',
+        })
+
+        expect(updateResult.success).toBe(true)
+        expect(updateResult.mode).toBe('database')
+        expect(db.getAllCommands()[0].title).toBe('Legacy Command Updated')
+
+        const deleteResult = await deleteLocalLibraryCommand(commandId)
+        expect(deleteResult.success).toBe(true)
+        expect(deleteResult.mode).toBe('database')
+        expect(db.getAllCommands()).toHaveLength(0)
     })
 })

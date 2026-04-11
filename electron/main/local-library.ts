@@ -5,7 +5,7 @@ import crypto from 'node:crypto'
 import AdmZip from 'adm-zip'
 import * as db from './database'
 import * as settings from './settings'
-import type { Library, LibraryManifest, RemoteCommand, SyncResult } from '../../shared/types'
+import type { CommandMutationResult, Library, LibraryManifest, RemoteCommand, SyncResult } from '../../shared/types'
 
 // ── Local Folder Scanning ────────────────────────────────────────
 
@@ -13,6 +13,14 @@ interface ScanResult {
     manifest: LibraryManifest
     manifestPath: string
     commands: Array<{ path: string; command: RemoteCommand }>
+}
+
+interface CommandFormData {
+    title: string
+    body: string
+    description: string
+    tags: string
+    language: string
 }
 
 function deriveLibraryName(folderPath: string): string {
@@ -48,6 +56,76 @@ export function getDefaultWritableLocalLibrary(): Library | null {
 
 export function setDefaultWritableLocalLibrary(libraryId: number): void {
     settings.set('library.defaultWritableLocalLibraryId', libraryId)
+}
+
+function parseTags(tags: string): string[] {
+    try {
+        const parsed = JSON.parse(tags)
+        return Array.isArray(parsed) ? parsed.filter(tag => typeof tag === 'string') : []
+    } catch {
+        return []
+    }
+}
+
+function buildCommandFileData(command: CommandFormData, createdAt: string): {
+    snipforge: 'command'
+    title: string
+    body: string
+    description: string
+    tags: string[]
+    language: string
+    created_at: string
+    updated_at: string
+} {
+    const now = new Date().toISOString()
+    return {
+        snipforge: 'command',
+        title: command.title.trim(),
+        body: command.body.trim(),
+        description: command.description || '',
+        tags: parseTags(command.tags),
+        language: command.language || 'plaintext',
+        created_at: createdAt,
+        updated_at: now,
+    }
+}
+
+async function writeCommandFile(folderPath: string, fileName: string, command: CommandFormData, createdAt: string): Promise<void> {
+    const fileData = buildCommandFileData(command, createdAt)
+    await fs.writeFile(
+        path.join(folderPath, fileName),
+        JSON.stringify(fileData, null, 2) + '\n',
+        'utf8'
+    )
+}
+
+async function findUniqueCommandFileName(folderPath: string, title: string): Promise<string> {
+    const baseName = slugify(title)
+    let counter = 0
+
+    while (true) {
+        const fileName = counter === 0 ? `${baseName}.json` : `${baseName}-${counter + 1}.json`
+        try {
+            await fs.access(path.join(folderPath, fileName))
+            counter += 1
+        } catch {
+            return fileName
+        }
+    }
+}
+
+function resolveFileBackedLocalCommand(commandId: number): { command: db.Command; library: Library } | null {
+    const command = db.getAllCommands().find(c => c.id === commandId)
+    if (!command || command.source !== 'remote' || !command.library_id || !command.remote_path) {
+        return null
+    }
+
+    const library = db.getAllLibraries().find(l => l.id === command.library_id)
+    if (!isInitializedLocalLibrary(library)) {
+        return null
+    }
+
+    return { command, library }
 }
 
 async function readFolderManifest(folderPath: string): Promise<ScanResult | null> {
@@ -150,6 +228,73 @@ async function indexLocalLibrary(folderPath: string, options: { ensureManifest: 
     )
     const library = db.getLibraryByRepo(folderPath)!
     return { library, syncResult }
+}
+
+export async function createLocalLibraryCommand(command: CommandFormData): Promise<CommandMutationResult> {
+    const library = getDefaultWritableLocalLibrary()
+    if (!library) {
+        const id = db.addCommand({
+            title: command.title,
+            body: command.body,
+            description: command.description,
+            tags: command.tags,
+            language: command.language,
+            source: 'local',
+            library_id: null,
+            remote_path: null,
+        })
+        return { success: id > 0, mode: 'database' }
+    }
+
+    const fileName = await findUniqueCommandFileName(library.github_repo, command.title)
+    const createdAt = new Date().toISOString()
+    await writeCommandFile(library.github_repo, fileName, command, createdAt)
+
+    const syncResult = await syncLocalLibrary(library.id, true)
+    const updatedLibrary = db.getAllLibraries().find(l => l.id === library.id) || library
+    return { success: true, mode: 'library', library: updatedLibrary, syncResult }
+}
+
+export async function updateLocalLibraryCommand(commandId: number, updates: CommandFormData): Promise<CommandMutationResult> {
+    const target = resolveFileBackedLocalCommand(commandId)
+    if (!target) {
+        const success = db.updateCommand(commandId, {
+            title: updates.title,
+            body: updates.body,
+            description: updates.description,
+            tags: updates.tags,
+            language: updates.language,
+        })
+        return { success, mode: 'database' }
+    }
+
+    const filePath = path.join(target.library.github_repo, target.command.remote_path)
+    const existing = await fs.readFile(filePath, 'utf8').then(content => JSON.parse(content) as {
+        created_at?: string
+    }).catch(() => null)
+
+    if (!existing) {
+        throw new Error('Command file not found')
+    }
+
+    await writeCommandFile(target.library.github_repo, target.command.remote_path, updates, existing.created_at || target.command.created_at)
+    const syncResult = await syncLocalLibrary(target.library.id, true)
+    const updatedLibrary = db.getAllLibraries().find(l => l.id === target.library.id) || target.library
+    return { success: true, mode: 'library', library: updatedLibrary, syncResult }
+}
+
+export async function deleteLocalLibraryCommand(commandId: number): Promise<CommandMutationResult> {
+    const target = resolveFileBackedLocalCommand(commandId)
+    if (!target) {
+        const success = db.deleteCommand(commandId)
+        return { success, mode: 'database' }
+    }
+
+    const filePath = path.join(target.library.github_repo, target.command.remote_path)
+    await fs.rm(filePath, { force: true })
+    const syncResult = await syncLocalLibrary(target.library.id, true)
+    const updatedLibrary = db.getAllLibraries().find(l => l.id === target.library.id) || target.library
+    return { success: true, mode: 'library', library: updatedLibrary, syncResult }
 }
 
 export async function scanLocalFolder(folderPath: string): Promise<ScanResult> {

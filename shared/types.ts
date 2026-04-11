@@ -119,3 +119,11 @@ export interface DefaultWritableLibrarySetupResult {
   cancelled?: boolean
   error?: string
 }
+
+export interface CommandMutationResult {
+  success: boolean
+  mode?: 'library' | 'database'
+  library?: Library
+  syncResult?: SyncResult
+  error?: string
+}

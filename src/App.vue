@@ -636,7 +636,7 @@ const processImport = async (commandsToAdd: ImportCommand[], idsToReplace: numbe
     // Delete existing commands if replacing
     if (idsToReplace.length > 0) {
       for (const id of idsToReplace) {
-        await window.electronAPI.database.deleteCommand(id)
+        await window.electronAPI.library.deleteCommand(id)
       }
     }
 
@@ -646,7 +646,7 @@ const processImport = async (commandsToAdd: ImportCommand[], idsToReplace: numbe
 
     for (const command of commandsToAdd) {
       try {
-        const addResult = await window.electronAPI.database.addCommand(command)
+        const addResult = await window.electronAPI.library.createCommand(command)
         if (addResult.success) {
           successCount++
         } else {
@@ -717,7 +717,7 @@ const handleBulkDelete = async (ids: number[]) => {
 
     for (const id of ids) {
       try {
-        const result = await window.electronAPI.database.deleteCommand(id)
+        const result = await window.electronAPI.library.deleteCommand(id)
         if (result.success) {
           successCount++
         } else {
@@ -802,7 +802,7 @@ const deleteCommand = async (id: number) => {
   if (!confirmDelete) return
   // Call the API to delete the command
   try {
-    const result = await window.electronAPI.database.deleteCommand(id)
+    const result = await window.electronAPI.library.deleteCommand(id)
     if (result.success) {
       showNotificationToast('Command deleted')
       // refresh the command list and clear selection
@@ -897,7 +897,7 @@ const deleteCommand = async (id: number) => {
     try {
       if (modalMode.value === 'edit' && selectedCommandForEdit.value) {
         // Update existing command
-        const result = await window.electronAPI.database.updateCommand(selectedCommandForEdit.value.id,
+        const result = await window.electronAPI.library.updateCommand(selectedCommandForEdit.value.id,
   formData)
         if (result.success) {
           showNotificationToast('Command updated')
@@ -908,7 +908,7 @@ const deleteCommand = async (id: number) => {
         }
       } else {
         // Add new command
-        const result = await window.electronAPI.database.addCommand(formData)
+        const result = await window.electronAPI.library.createCommand(formData)
         if (result.success) {
           showNotificationToast('Command added')
           await loadCommands()

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron"
-import type { Command, Library, SyncResult, AuthStatus, GitHubUser, BulkPublishResult, UpdateStatus, DiscoveredLibrary, DefaultWritableLibraryResult, DefaultWritableLibrarySetupResult } from "../../shared/types"
+import type { Command, Library, SyncResult, AuthStatus, GitHubUser, BulkPublishResult, UpdateStatus, DiscoveredLibrary, DefaultWritableLibraryResult, DefaultWritableLibrarySetupResult, CommandMutationResult } from "../../shared/types"
 //expose db methods to renderer process
 contextBridge.exposeInMainWorld('electronAPI', {
   // db methods
@@ -95,6 +95,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('library:getDefaultWritableLocalLibrary'),
     setupDefaultWritableLocalLibrary: (): Promise<DefaultWritableLibrarySetupResult> =>
       ipcRenderer.invoke('library:setupDefaultWritableLocalLibrary'),
+    createCommand: (command: { title: string; body: string; description: string; tags: string; language: string }): Promise<CommandMutationResult> =>
+      ipcRenderer.invoke('library:createCommand', command),
+    updateCommand: (id: number, updates: { title: string; body: string; description: string; tags: string; language: string }): Promise<CommandMutationResult> =>
+      ipcRenderer.invoke('library:updateCommand', id, updates),
+    deleteCommand: (id: number): Promise<CommandMutationResult> =>
+      ipcRenderer.invoke('library:deleteCommand', id),
     browse: (repoUrl: string): Promise<{ success: boolean; manifest?: any; commands?: any[]; error?: string }> =>
       ipcRenderer.invoke('library:browse', repoUrl),
     openLocal: (): Promise<{ success: boolean; library?: Library; syncResult?: SyncResult; error?: string }> =>
@@ -193,6 +199,9 @@ declare global {
         getAll: () => Promise<Library[]>
         getDefaultWritableLocalLibrary: () => Promise<DefaultWritableLibraryResult>
         setupDefaultWritableLocalLibrary: () => Promise<DefaultWritableLibrarySetupResult>
+        createCommand: (command: { title: string; body: string; description: string; tags: string; language: string }) => Promise<CommandMutationResult>
+        updateCommand: (id: number, updates: { title: string; body: string; description: string; tags: string; language: string }) => Promise<CommandMutationResult>
+        deleteCommand: (id: number) => Promise<CommandMutationResult>
         browse: (repoUrl: string) => Promise<{ success: boolean; manifest?: any; commands?: any[]; error?: string }>
         openLocal: () => Promise<{ success: boolean; library?: Library; syncResult?: SyncResult; error?: string }>
         init: (libraryId: number, name: string, description: string, subpath?: string) => Promise<{ success: boolean; library?: Library; syncResult?: SyncResult; error?: string }>

@@ -956,6 +956,53 @@ ipcMain.handle('library:setupDefaultWritableLocalLibrary', async () => {
   }
 })
 
+ipcMain.handle('library:createCommand', async (_, command: { title: string; body: string; description: string; tags: string; language: string }) => {
+  if (
+    !isValidCommandUpdate(command) ||
+    typeof command.title !== 'string' ||
+    typeof command.body !== 'string' ||
+    !command.title.trim() ||
+    !command.body.trim()
+  ) {
+    return { success: false, error: 'Invalid command data' }
+  }
+  try {
+    return await localLibrary.createLocalLibraryCommand(command)
+  } catch (error) {
+    console.error('Library createCommand error:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+ipcMain.handle('library:updateCommand', async (_, id: number, updates: { title: string; body: string; description: string; tags: string; language: string }) => {
+  if (
+    typeof id !== 'number' ||
+    !isValidCommandUpdate(updates) ||
+    !updates.title.trim() ||
+    !updates.body.trim()
+  ) {
+    return { success: false, error: 'Invalid parameters' }
+  }
+  try {
+    return await localLibrary.updateLocalLibraryCommand(id, updates)
+  } catch (error) {
+    console.error('Library updateCommand error:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+ipcMain.handle('library:deleteCommand', async (_, id: number) => {
+  if (typeof id !== 'number') {
+    return { success: false, error: 'Invalid ID' }
+  }
+  try {
+    return await localLibrary.deleteLocalLibraryCommand(id)
+  } catch (error) {
+    console.error('Library deleteCommand error:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
 ipcMain.handle('library:exportZip', async (_, commandIds: number[], name: string, description: string) => {
   if (!win) return { success: false, error: 'No window' }
   try {
