@@ -6,6 +6,7 @@ import * as db from '../electron/main/database'
 import {
     createLocalLibraryCommand,
     deleteLocalLibraryCommand,
+    reindexInitializedLocalLibraries,
     scanLocalFolder,
     setupDefaultWritableLocalLibrary,
     slugify,
@@ -270,5 +271,62 @@ describe('local library CRUD', () => {
         expect(deleteResult.success).toBe(true)
         expect(deleteResult.mode).toBe('database')
         expect(db.getAllCommands()).toHaveLength(0)
+    })
+
+    it('reindexes initialized local libraries on startup-style rebuild', async () => {
+        const setup = await setupDefaultWritableLocalLibrary(tmpDir)
+        await createLocalLibraryCommand({
+            title: 'Reindex Me',
+            body: 'echo from disk',
+            description: 'cache me again',
+            tags: '["cache"]',
+            language: 'bash',
+        })
+
+        const existing = db.getRemoteCommands(setup.library.id)
+        expect(existing).toHaveLength(1)
+        expect(existing[0].remote_path).toBeTruthy()
+
+        db.deleteRemoteCommand(setup.library.id, existing[0].remote_path as string)
+        expect(db.getRemoteCommands(setup.library.id)).toHaveLength(0)
+
+        const results = await reindexInitializedLocalLibraries()
+
+        expect(results).toHaveLength(1)
+        expect(results[0].result.added).toBe(1)
+        expect(results[0].result.errors).toEqual([])
+
+        const rebuilt = db.getRemoteCommands(setup.library.id)
+        expect(rebuilt).toHaveLength(1)
+        expect(rebuilt[0].title).toBe('Reindex Me')
+        expect(rebuilt[0].body).toBe('echo from disk')
+    })
+
+    it('refreshes stale indexed data from disk during reindex', async () => {
+        const setup = await setupDefaultWritableLocalLibrary(tmpDir)
+        await createLocalLibraryCommand({
+            title: 'Original Title',
+            body: 'echo original',
+            description: 'original desc',
+            tags: '["original"]',
+            language: 'bash',
+        })
+
+        const existing = db.getRemoteCommands(setup.library.id)
+        const remotePath = existing[0].remote_path as string
+        const filePath = path.join(tmpDir, remotePath)
+        const fileJson = JSON.parse(await fs.readFile(filePath, 'utf8'))
+        fileJson.title = 'Disk Wins'
+        fileJson.body = 'echo updated from disk'
+        fileJson.updated_at = '2099-01-01T00:00:00.000Z'
+        await fs.writeFile(filePath, JSON.stringify(fileJson, null, 2) + '\n', 'utf8')
+
+        const results = await reindexInitializedLocalLibraries()
+
+        expect(results[0].result.updated).toBe(1)
+
+        const rebuilt = db.getRemoteCommands(setup.library.id)
+        expect(rebuilt[0].title).toBe('Disk Wins')
+        expect(rebuilt[0].body).toBe('echo updated from disk')
     })
 })

@@ -483,6 +483,28 @@ export async function syncLocalLibrary(libraryId: number, force = false): Promis
     return db.syncRemoteCommands(libraryId, sha, toAdd, toUpdate, toRemove)
 }
 
+export async function reindexInitializedLocalLibraries(): Promise<Array<{ libraryId: number; result: SyncResult; error?: string }>> {
+    const libraries = db.getAllLibraries()
+        .filter(library => library.type === 'local' && !!library.manifest_path)
+
+    const results: Array<{ libraryId: number; result: SyncResult; error?: string }> = []
+
+    for (const library of libraries) {
+        try {
+            const result = await syncLocalLibrary(library.id, true)
+            results.push({ libraryId: library.id, result })
+        } catch (error) {
+            results.push({
+                libraryId: library.id,
+                result: { added: 0, updated: 0, removed: 0, errors: [(error as Error).message] },
+                error: (error as Error).message,
+            })
+        }
+    }
+
+    return results
+}
+
 // ── Open Local Folder ────────────────────────────────────────────
 
 export async function openLocalFolder(folderPath: string): Promise<{ library: Library; syncResult: SyncResult }> {
