@@ -25,7 +25,11 @@
     }
   },
   "type": "module",
+  "bin": {
+    "snipforge": "./bin/snipforge.mjs"
+  },
   "scripts": {
+    "cli": "node ./bin/snipforge.mjs",
     "dev": "node scripts/dev-app.mjs",
     "dev:debug": "node scripts/dev-app.mjs 9222",
     "build": "vue-tsc --noEmit && vite build && electron-builder",
