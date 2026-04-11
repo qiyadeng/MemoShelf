@@ -31,6 +31,7 @@ const DEFAULTS: Record<string, unknown> = {
   'general.hotkey': 'CommandOrControl+Shift+Space',
   'general.windowState': null as WindowState | null,
   'library.autoSync': false, // master toggle for auto-sync
+  'library.defaultWritableLocalLibraryId': null as number | null,
   'display.tagPills': true,
   'display.previewOnCopy': true,
   'shortcuts': { ...DEFAULT_SHORTCUTS },

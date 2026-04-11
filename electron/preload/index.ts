@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron"
-import type { Command, Library, SyncResult, AuthStatus, GitHubUser, BulkPublishResult, UpdateStatus, DiscoveredLibrary } from "../../shared/types"
+import type { Command, Library, SyncResult, AuthStatus, GitHubUser, BulkPublishResult, UpdateStatus, DiscoveredLibrary, DefaultWritableLibraryResult, DefaultWritableLibrarySetupResult } from "../../shared/types"
 //expose db methods to renderer process
 contextBridge.exposeInMainWorld('electronAPI', {
   // db methods
@@ -91,6 +91,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('library:syncAll'),
     getAll: (): Promise<Library[]> =>
       ipcRenderer.invoke('library:getAll'),
+    getDefaultWritableLocalLibrary: (): Promise<DefaultWritableLibraryResult> =>
+      ipcRenderer.invoke('library:getDefaultWritableLocalLibrary'),
+    setupDefaultWritableLocalLibrary: (): Promise<DefaultWritableLibrarySetupResult> =>
+      ipcRenderer.invoke('library:setupDefaultWritableLocalLibrary'),
     browse: (repoUrl: string): Promise<{ success: boolean; manifest?: any; commands?: any[]; error?: string }> =>
       ipcRenderer.invoke('library:browse', repoUrl),
     openLocal: (): Promise<{ success: boolean; library?: Library; syncResult?: SyncResult; error?: string }> =>
@@ -187,6 +191,8 @@ declare global {
         sync: (libraryId: number) => Promise<{ success: boolean; added?: number; updated?: number; removed?: number; errors?: string[]; error?: string }>
         syncAll: () => Promise<{ success: boolean; results?: Array<{ library: Library; result: SyncResult }>; error?: string }>
         getAll: () => Promise<Library[]>
+        getDefaultWritableLocalLibrary: () => Promise<DefaultWritableLibraryResult>
+        setupDefaultWritableLocalLibrary: () => Promise<DefaultWritableLibrarySetupResult>
         browse: (repoUrl: string) => Promise<{ success: boolean; manifest?: any; commands?: any[]; error?: string }>
         openLocal: () => Promise<{ success: boolean; library?: Library; syncResult?: SyncResult; error?: string }>
         init: (libraryId: number, name: string, description: string, subpath?: string) => Promise<{ success: boolean; library?: Library; syncResult?: SyncResult; error?: string }>

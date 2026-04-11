@@ -115,6 +115,9 @@ const pendingCommand = ref<string>('')
 
 // Settings modal state
 const showSettingsModal = ref(false)
+const showFirstRunSetup = ref(false)
+const firstRunSetupLoading = ref(false)
+const firstRunSetupError = ref('')
 
 // Help modal state
 const showHelpModal = ref(false)
@@ -195,6 +198,42 @@ const loadCommands = async () => {
   }
 } // Load commands when the component is mounted
 
+async function ensureDefaultWritableLibrary() {
+  try {
+    const result = await window.electronAPI.library.getDefaultWritableLocalLibrary()
+    if (!result.success || !result.library) {
+      showFirstRunSetup.value = true
+    }
+  } catch (error) {
+    console.error('Failed to resolve default writable library:', error)
+    showFirstRunSetup.value = true
+  }
+}
+
+async function handleChooseDefaultWritableLibrary() {
+  if (firstRunSetupLoading.value) return
+  firstRunSetupLoading.value = true
+  firstRunSetupError.value = ''
+
+  try {
+    const result = await window.electronAPI.library.setupDefaultWritableLocalLibrary()
+    if (result.success && result.library) {
+      showFirstRunSetup.value = false
+      await loadCommands()
+      showNotificationToast(`Default library set to ${result.library.name}`)
+      return
+    }
+
+    if (!result.cancelled && result.error) {
+      firstRunSetupError.value = result.error
+    }
+  } catch (error) {
+    firstRunSetupError.value = (error as Error).message
+  } finally {
+    firstRunSetupLoading.value = false
+  }
+}
+
 // Store click handler so we can remove it on unmount
 // Uses capture phase so it fires before any @click.stop can block propagation
 const outsideClickHandler = (event: MouseEvent) => {
@@ -206,9 +245,9 @@ const outsideClickHandler = (event: MouseEvent) => {
   }
 }
 
-onMounted(() => {
-  loadCommands()
-  checkMaximizedState()
+onMounted(async () => {
+  await loadCommands()
+  await checkMaximizedState()
   //keyboard event listener
   document.addEventListener('keydown', handleKeyboard)
 
@@ -237,6 +276,8 @@ onMounted(() => {
       loadCommands()
     })
   }
+
+  await ensureDefaultWritableLibrary()
 })
 
 // Cleanup event listeners and timers on unmount
@@ -935,6 +976,8 @@ function matchAction(event: KeyboardEvent, action: string): boolean {
 const handleKeyboard = (event: KeyboardEvent) => {
   const target = event.target as HTMLElement
 
+  if (showFirstRunSetup.value) return
+
   // Handle ESC first - it should always work to cancel/close things
   if (event.key === 'Escape') {
     event.preventDefault()
@@ -1266,6 +1309,29 @@ const openDescriptionModal = (title: string, description: string) => {
 
     <!-- Update Banner -->
     <UpdateBanner />
+
+    <!-- First-run library setup -->
+    <div v-if="showFirstRunSetup" class="first-run-overlay">
+      <div class="first-run-card">
+        <div class="first-run-badge">First run</div>
+        <h2>Choose a default writable library</h2>
+        <p>
+          SnipForge needs one local folder to own your command files. Pick a folder now and
+          the app will create <code>.snipforge.json</code> there if needed.
+        </p>
+        <p v-if="firstRunSetupError" class="first-run-error">{{ firstRunSetupError }}</p>
+        <button
+          class="first-run-button"
+          :disabled="firstRunSetupLoading"
+          @click="handleChooseDefaultWritableLibrary"
+        >
+          {{ firstRunSetupLoading ? 'Choosing...' : 'Choose Folder' }}
+        </button>
+        <p class="first-run-note">
+          This setup is required before you start adding commands.
+        </p>
+      </div>
+    </div>
 
     <!-- Command Modal -->
     <CommandModal
@@ -1919,6 +1985,97 @@ html, body, #app {
   gap: 12px;
   padding: 20px 24px;
   border-top: 1px solid var(--border);
+}
+
+.first-run-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-modal) + 1);
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.06), transparent 45%),
+    linear-gradient(180deg, rgba(8, 8, 12, 0.9), rgba(8, 8, 12, 0.96));
+  backdrop-filter: blur(10px);
+  -webkit-app-region: no-drag;
+}
+
+.first-run-card {
+  width: min(560px, calc(100vw - 32px));
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 28px;
+  background: linear-gradient(180deg, rgba(24, 24, 28, 0.98), rgba(18, 18, 22, 0.98));
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+}
+
+.first-run-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 14px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(96, 165, 250, 0.14);
+  color: #93c5fd;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.first-run-card h2 {
+  margin: 0 0 10px;
+  color: var(--text-primary);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.first-run-card p {
+  margin: 0 0 14px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.first-run-card code {
+  padding: 0 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+}
+
+.first-run-error {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+}
+
+.first-run-button {
+  min-width: 180px;
+  padding: 12px 18px;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #60a5fa, #3b82f6);
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+  box-shadow: 0 10px 24px rgba(59, 130, 246, 0.28);
+}
+
+.first-run-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.first-run-button:disabled {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+.first-run-note {
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--text-tertiary);
 }
 
 /* Form elements */
