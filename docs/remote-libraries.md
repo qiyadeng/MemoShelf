@@ -445,6 +445,9 @@ Every SnipForge file format gets a top-level `"snipforge"` field so the app can 
 - Old bundles without `snipforge: "bundle"` still import via `version` + `commands` check
 - Old command files without `snipforge: "command"` still validate via `title` + `body` check
 
+**Follow-up consistency work:**
+- [x] Bulk export now routes through `importExport.ts:exportCommands()` so all bundle exports share the same metadata shape and `snipforge: "bundle"` identity (issue [#33](https://github.com/ArtluxDM/SnipForge/issues/33))
+
 **Implementation notes:**
 - Import gains single-command support as a side effect: `validateExportData()` detects `snipforge: "command"` or bare `title`+`body` files and wraps them as a one-item bundle. This means any command JSON file (from a library, publish, or export) is directly importable via the import dialog.
 - Manifest detection shows a user-friendly error pointing to "Open Folder" instead of a cryptic validation failure.

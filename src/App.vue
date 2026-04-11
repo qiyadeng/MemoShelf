@@ -711,22 +711,8 @@ const handleBulkExport = async (ids: number[]) => {
   if (ids.length === 0) return
 
   try {
-    // Get selected commands
     const selectedCommands = commands.value.filter(cmd => ids.includes(cmd.id))
-
-    // Create export data
-    const exportData = {
-      version: '2.0',
-      export_date: new Date().toISOString(),
-      total_commands: selectedCommands.length,
-      commands: selectedCommands.map(cmd => ({
-        title: cmd.title,
-        body: cmd.body,
-        description: cmd.description,
-        tags: JSON.parse(cmd.tags),
-        language: cmd.language
-      }))
-    }
+    const exportData = exportCommands(selectedCommands)
 
     const filename = `snipforge_selected_${selectedCommands.length}_commands.json`
 
