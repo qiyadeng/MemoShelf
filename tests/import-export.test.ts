@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { exportCommands, generateExportFilename } from '../src/utils/importExport'
+import { exportCommands, generateExportFilename, prepareExportBundle } from '../src/utils/importExport'
 import type { Command } from '../shared/types'
 
 function makeCommand(overrides: Partial<Command> = {}): Command {
@@ -93,5 +93,24 @@ describe('exportCommands', () => {
 describe('generateExportFilename', () => {
     it('uses the shared filename format for filtered exports', () => {
         expect(generateExportFilename(['docker', 'logs'])).toMatch(/^snipforge-commands_docker-logs_\d{4}-\d{2}-\d{2}\.json$/)
+    })
+})
+
+describe('prepareExportBundle', () => {
+    it('returns the shared filename and serialized content for bulk export flows', () => {
+        const bundle = prepareExportBundle([
+            makeCommand(),
+            makeCommand({
+                id: 2,
+                title: 'Kubectl Pods',
+                body: 'kubectl get pods',
+                tags: '["k8s"]',
+            }),
+        ])
+
+        expect(bundle.filename).toMatch(/^snipforge-commands_\d{4}-\d{2}-\d{2}\.json$/)
+        expect(bundle.content).toBe(JSON.stringify(bundle.exportData, null, 2))
+        expect(bundle.exportData.total_commands).toBe(2)
+        expect(bundle.exportData.snipforge).toBe('bundle')
     })
 })

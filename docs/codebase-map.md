@@ -120,6 +120,18 @@ SnipForge/
 
 ## Active Notes
 
+### Issue #33: use shared export utility for bulk export
+
+Plan:
+- Move export bundle assembly behind one shared utility so filtered export and bulk export produce the same filename and serialized payload shape.
+- Update `App.vue` to consume the shared export-preparation path instead of duplicating export save logic inline.
+- Add regression coverage for the shared filename/content path used by bulk export.
+
+Final notes:
+- `src/utils/importExport.ts` now exposes `prepareExportBundle()` so export callers share bundle metadata, filename generation, and JSON serialization.
+- `App.vue` uses that shared path for both filtered export and bulk export, removing the bulk-only filename divergence.
+- Regression coverage verifies the shared filename/content path that bulk export now relies on.
+
 ### Issue #34: batch IPC for import and bulk delete
 
 Plan:

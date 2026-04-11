@@ -15,7 +15,7 @@ import { Copy, Edit, Trash2, HelpCircle, Settings, Anvil, CirclePlus, Upload, Cl
 import { VList } from 'virtua/vue'
 import { extractVariables, substituteVariables, hasVariables, highlightVariables, type VariableValues } from './utils/variables'
 import { useSettings } from './composables/useSettings'
-import { exportCommands, importCommands, validateExportData, generateExportFilename, detectDuplicates, type DuplicateMatch, type ImportCommand } from './utils/importExport'
+import { prepareExportBundle, importCommands, validateExportData, detectDuplicates, type DuplicateMatch, type ImportCommand } from './utils/importExport'
 import { fuzzySearchCommands } from './utils/fuzzySearch'
 import { getAllTags, matchesTagFilter } from './utils/tags'
 import { marked } from 'marked'
@@ -474,15 +474,13 @@ const handleVariableCancel = () => {
 // Export functionality
 const handleExport = async (filterTags: string[]) => {
   try {
-    // Export commands with filtering
-    const exportData = exportCommands(commands.value, filterTags)
-    const filename = generateExportFilename(filterTags)
+    const { exportData, filename, content } = prepareExportBundle(commands.value, filterTags)
 
     // Show save dialog
     const result = await window.electronAPI.file.saveDialog(filename)
     if (result.success && result.filePath) {
       // Write file
-      const writeResult = await window.electronAPI.file.writeFile(result.filePath, JSON.stringify(exportData, null, 2))
+      const writeResult = await window.electronAPI.file.writeFile(result.filePath, content)
       if (writeResult.success) {
         alert(`Successfully exported ${exportData.total_commands} commands!`)
       } else {
@@ -736,18 +734,13 @@ const handleBulkExport = async (ids: number[]) => {
 
   try {
     const selectedCommands = commands.value.filter(cmd => ids.includes(cmd.id))
-    const exportData = exportCommands(selectedCommands)
-
-    const filename = `snipforge_selected_${selectedCommands.length}_commands.json`
+    const { filename, content } = prepareExportBundle(selectedCommands)
 
     // Show save dialog
     const result = await window.electronAPI.file.saveDialog(filename)
     if (result.success && result.filePath) {
       // Write file
-      const writeResult = await window.electronAPI.file.writeFile(
-        result.filePath,
-        JSON.stringify(exportData, null, 2)
-      )
+      const writeResult = await window.electronAPI.file.writeFile(result.filePath, content)
       if (writeResult.success) {
         showNotificationToast(`Exported ${selectedCommands.length} command${selectedCommands.length > 1 ? 's' : ''}`)
       } else {

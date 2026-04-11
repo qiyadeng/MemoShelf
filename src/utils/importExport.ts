@@ -30,6 +30,12 @@ export interface ExportData {
   filter_tags?: string[]
 }
 
+export interface PreparedExportBundle {
+  exportData: ExportData
+  filename: string
+  content: string
+}
+
 export interface ImportCommand {
   title: string
   body: string
@@ -77,6 +83,19 @@ export function exportCommands(
   }
 
   return exportData
+}
+
+export function prepareExportBundle(
+  commands: Command[],
+  filterTags: string[] = []
+): PreparedExportBundle {
+  const exportData = exportCommands(commands, filterTags)
+
+  return {
+    exportData,
+    filename: generateExportFilename(filterTags),
+    content: JSON.stringify(exportData, null, 2),
+  }
 }
 
 /**
