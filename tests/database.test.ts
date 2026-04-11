@@ -266,4 +266,67 @@ describe('syncRemoteCommands', () => {
         expect(result.removed).toBe(1)
         expect(db.getRemoteCommands(libraryId)).toHaveLength(0)
     })
+
+    it('does NOT update SHA when an update targets a stale path', () => {
+        db.syncRemoteCommands(libraryId, 'initial-sha', [
+            {
+                remotePath: 'cmd.json',
+                command: {
+                    title: 'Original',
+                    body: 'echo original',
+                    description: '',
+                    tags: '[]',
+                    language: 'bash',
+                    created_at: '2026-01-01T00:00:00Z',
+                    updated_at: '2026-01-01T00:00:00Z',
+                }
+            }
+        ], [], [])
+
+        const result = db.syncRemoteCommands(libraryId, 'new-sha', [], [
+            {
+                remotePath: 'missing.json',
+                command: {
+                    title: 'Updated',
+                    body: 'echo updated',
+                    description: '',
+                    tags: '[]',
+                    language: 'bash',
+                    updated_at: '2026-02-01T00:00:00Z',
+                }
+            }
+        ], [])
+
+        expect(result.updated).toBe(0)
+        expect(result.errors).toContain('Failed to update missing.json: command not found')
+
+        const lib = db.getAllLibraries().find(l => l.id === libraryId)
+        expect(lib?.last_synced_sha).toBe('initial-sha')
+    })
+
+    it('does NOT update SHA when a removal targets a stale path', () => {
+        db.syncRemoteCommands(libraryId, 'initial-sha', [
+            {
+                remotePath: 'cmd.json',
+                command: {
+                    title: 'Original',
+                    body: 'echo original',
+                    description: '',
+                    tags: '[]',
+                    language: 'bash',
+                    created_at: '2026-01-01T00:00:00Z',
+                    updated_at: '2026-01-01T00:00:00Z',
+                }
+            }
+        ], [], [])
+
+        const result = db.syncRemoteCommands(libraryId, 'new-sha', [], [], ['missing.json'])
+
+        expect(result.removed).toBe(0)
+        expect(result.errors).toContain('Failed to remove missing.json: command not found')
+
+        const lib = db.getAllLibraries().find(l => l.id === libraryId)
+        expect(lib?.last_synced_sha).toBe('initial-sha')
+        expect(db.getRemoteCommands(libraryId)).toHaveLength(1)
+    })
 })

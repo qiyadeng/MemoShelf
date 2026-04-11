@@ -440,14 +440,20 @@ export function syncRemoteCommands(
         }
         for (const item of toUpdate) {
             try {
-                updateRemoteCommand(libraryId, item.remotePath, item.command)
+                const updated = updateRemoteCommand(libraryId, item.remotePath, item.command)
+                if (!updated) {
+                    errors.push(`Failed to update ${item.remotePath}: command not found`)
+                }
             } catch (e) {
                 errors.push(`Failed to update ${item.remotePath}: ${(e as Error).message}`)
             }
         }
         for (const remotePath of toRemove) {
             try {
-                deleteRemoteCommand(libraryId, remotePath)
+                const removed = deleteRemoteCommand(libraryId, remotePath)
+                if (!removed) {
+                    errors.push(`Failed to remove ${remotePath}: command not found`)
+                }
             } catch (e) {
                 errors.push(`Failed to remove ${remotePath}: ${(e as Error).message}`)
             }

@@ -2,6 +2,20 @@
 
 Library-First Command Storage makes libraries the default way commands exist in SnipForge. Instead of storing canonical command data in SQLite and treating files/repos as import-export surfaces, command JSON files inside library folders become the source of truth. SQLite remains in the app, but only as cache/index plus app metadata.
 
+## Active Notes
+
+### Issue #25: harden sync bookkeeping for library-backed storage
+
+Plan:
+- treat no-op remote updates and removals as sync failures instead of silent success
+- block SHA advancement whenever any add, update, or removal in the batch fails
+- add regression coverage for stale-path update/remove cases so cache/index drift stays recoverable
+
+Final notes:
+- `electron/main/database.ts` now treats zero-row remote updates and removals as explicit sync failures instead of counting them as success
+- library sync SHA advancement still happens only on clean batches, which now includes stale-path and no-op mutation cases
+- regression coverage in `tests/database.test.ts` now proves stale update/remove paths return surfaced errors and preserve the previous sync SHA
+
 ## Why This Exists
 
 The current architecture splits command truth across SQLite and file-based libraries. That creates friction in two places that matter:
