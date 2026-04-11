@@ -119,6 +119,7 @@ pnpm build     # production build
 ## Documentation
 
 - [Remote Libraries](docs/remote-libraries.md) — GitHub/local library setup, sync algorithm, publishing
+- [DB Health](docs/db-health.md) — SQLite maintenance checks and DB test recovery
 - [Codebase Map](docs/codebase-map.md) — File reference, architecture, IPC channels
 - [Settings](docs/settings.md) — Configuration, hotkey remapping, auto-sync
 - [Variable Substitution](docs/variable-substitution.md) — Template syntax and copy flow

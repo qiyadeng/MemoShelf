@@ -12,6 +12,16 @@ During Remote Libraries development, sync bugs left orphaned rows in the databas
 
 Light and non-intrusive. This is not a database management framework — it's a small set of checks that run at sensible times.
 
+## DB Test Recovery
+
+When `tests/database.test.ts` stops loading after a Node upgrade or ABI drift, rebuild the native module and rerun the DB suite:
+
+```bash
+pnpm test:db
+```
+
+That command rebuilds `better-sqlite3` against the current environment and then runs `tests/database.test.ts`.
+
 ## Checks
 
 ### 1. Integrity Check

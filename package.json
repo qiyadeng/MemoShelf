@@ -30,6 +30,7 @@
     "dev:debug": "REMOTE_DEBUG=9222 vite",
     "build": "vue-tsc --noEmit && vite build && electron-builder",
     "preview": "vite preview",
+    "test:db": "node scripts/test-db.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },
