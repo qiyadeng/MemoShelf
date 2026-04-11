@@ -275,11 +275,11 @@ describe('local library CRUD', () => {
     it('writes created commands to disk with a stable id, then updates and deletes the same file', async () => {
         const setup = await setupDefaultWritableLocalLibrary(tmpDir)
         const createResult = await createLocalLibraryCommand({
-            title: 'Git Commit',
-            body: 'git commit -m "msg"',
-            description: 'Initial command',
-            tags: '["git", "commit"]',
-            language: 'bash',
+            title: '  Git Commit  ',
+            body: '  git commit -m "msg"  ',
+            description: '  Initial command  ',
+            tags: '["Git", "commit", " git "]',
+            language: '  BASH  ',
         })
 
         expect(createResult.success).toBe(true)
@@ -294,7 +294,10 @@ describe('local library CRUD', () => {
         expect(createdFile.snipforge).toBe('command')
         expect(createdFile.id).toMatch(/^[0-9a-f-]{36}$/)
         expect(createdFile.title).toBe('Git Commit')
+        expect(createdFile.body).toBe('git commit -m "msg"')
+        expect(createdFile.description).toBe('Initial command')
         expect(createdFile.tags).toEqual(['git', 'commit'])
+        expect(createdFile.language).toBe('bash')
 
         const updateResult = await updateLocalLibraryCommand(commandId, {
             title: 'Git Commit Updated',

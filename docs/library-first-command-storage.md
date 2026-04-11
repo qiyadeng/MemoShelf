@@ -255,6 +255,20 @@ Verification:
 - app reload or reindex preserves those commands from files
 - no command is lost if the cache DB is rebuilt
 
+Issue #26 plan:
+
+- introduce one shared normalization boundary for library-backed command writes
+- use that boundary for local file writes, GitHub publish writes, and file/repo reindex payload shaping
+- make serialized command JSON deterministic for normalized fields
+- add regression tests for title/body trimming, tag normalization, default language fallback, and created-at preservation on updates
+
+Issue #26 final notes:
+
+- implemented a shared library-command formatter/parser used by both local-library and GitHub write paths
+- local file creation, local export, GitHub publish, and reindex payload shaping now normalize title/body/description/tags/language through the same code path
+- tag serialization is deterministic and lowercased/deduplicated before file or index writes
+- regression coverage was added for the shared formatter and for local-library create/update normalization behavior
+
 ### Phase 4: SQLite Becomes Cache/Index
 
 Goal: demote SQLite to derived storage.

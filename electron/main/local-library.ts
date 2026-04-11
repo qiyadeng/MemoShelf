@@ -6,6 +6,15 @@ import AdmZip from 'adm-zip'
 import * as db from './database'
 import * as settings from './settings'
 import type { BatchCommandMutationResult, CommandMutationResult, DiscoveredLibrary, Library, LibraryManifest, RemoteCommand, SyncResult } from '../../shared/types'
+import {
+    buildLibraryCommandFileData,
+    normalizeCommandId,
+    parseLibraryCommandFile,
+    serializeLibraryCommandFile,
+    slugify,
+    toIndexedLibraryCommandData,
+} from '../../shared/library-command'
+export { slugify } from '../../shared/library-command'
 
 // ── Local Folder Scanning ────────────────────────────────────────
 
@@ -58,48 +67,8 @@ export function setDefaultWritableLocalLibrary(libraryId: number): void {
     settings.set('library.defaultWritableLocalLibraryId', libraryId)
 }
 
-function parseTags(tags: string): string[] {
-    try {
-        const parsed = JSON.parse(tags)
-        return Array.isArray(parsed) ? parsed.filter(tag => typeof tag === 'string') : []
-    } catch {
-        return []
-    }
-}
-
-function normalizeCommandId(value: unknown): string | null {
-    return typeof value === 'string' && /^[0-9a-f-]{36}$/.test(value)
-        ? value.toLowerCase()
-        : null
-}
-
 function createCommandId(): string {
     return crypto.randomUUID().toLowerCase()
-}
-
-function buildCommandFileData(command: CommandFormData, createdAt: string, id: string): {
-    snipforge: 'command'
-    id: string
-    title: string
-    body: string
-    description: string
-    tags: string[]
-    language: string
-    created_at: string
-    updated_at: string
-} {
-    const now = new Date().toISOString()
-    return {
-        snipforge: 'command',
-        id,
-        title: command.title.trim(),
-        body: command.body.trim(),
-        description: command.description || '',
-        tags: parseTags(command.tags),
-        language: command.language || 'plaintext',
-        created_at: createdAt,
-        updated_at: now,
-    }
 }
 
 async function writeCommandFile(
@@ -110,13 +79,18 @@ async function writeCommandFile(
     id: string,
     updatedAt?: string
 ): Promise<void> {
-    const fileData = buildCommandFileData(command, createdAt, id)
-    if (updatedAt) {
-        fileData.updated_at = updatedAt
-    }
+    const fileData = buildLibraryCommandFileData({
+        title: command.title,
+        body: command.body,
+        description: command.description,
+        tags: command.tags,
+        language: command.language,
+        created_at: createdAt,
+        updated_at: updatedAt,
+    }, id)
     await fs.writeFile(
         path.join(folderPath, fileName),
-        JSON.stringify(fileData, null, 2) + '\n',
+        serializeLibraryCommandFile(fileData),
         'utf8'
     )
 }
@@ -228,15 +202,7 @@ function buildLocalSyncPayload(commands: ScanResult['commands'], existingBodies:
         .filter(({ command }) => !existingBodies.has(command.body.trim()))
         .map(({ path: filePath, command }) => ({
             remotePath: filePath,
-            command: {
-                title: command.title,
-                body: command.body,
-                description: command.description || '',
-                tags: JSON.stringify(command.tags || []),
-                language: command.language || 'plaintext',
-                created_at: command.created_at || new Date().toISOString(),
-                updated_at: command.updated_at || new Date().toISOString(),
-            }
+            command: toIndexedLibraryCommandData(command),
         }))
 }
 
@@ -555,25 +521,10 @@ export async function scanLocalFolder(folderPath: string): Promise<ScanResult> {
         try {
             const content = await fs.readFile(filePath, 'utf8')
             const parsed = JSON.parse(content)
-
-            // Validate: must have title (string) and body (string)
-            if (
-                typeof parsed.title === 'string' && parsed.title.trim() &&
-                typeof parsed.body === 'string' && parsed.body.trim()
-            ) {
-                const command: RemoteCommand = {
-                    id: normalizeCommandId(parsed.id) || undefined,
-                    title: parsed.title,
-                    body: parsed.body,
-                    description: parsed.description || '',
-                    tags: Array.isArray(parsed.tags) ? parsed.tags : [],
-                    language: parsed.language || 'plaintext',
-                    created_at: parsed.created_at || new Date().toISOString(),
-                    updated_at: parsed.updated_at || new Date().toISOString(),
-                }
-                // Use just the filename as the "remote_path" (relative to library root)
-                commands.push({ path: file.name, command })
-            }
+            const command = parseLibraryCommandFile(parsed)
+            if (!command) continue
+            // Use just the filename as the "remote_path" (relative to library root)
+            commands.push({ path: file.name, command })
         } catch {
             // Not valid JSON or not a command — skip
         }
@@ -644,31 +595,21 @@ export async function syncLocalLibrary(libraryId: number, force = false): Promis
         const local = localByPath.get(filePath)
         if (!local) {
             if (localBodies.has(command.body.trim())) continue
-            toAdd.push({
-                remotePath: filePath,
-                command: {
-                    title: command.title,
-                    body: command.body,
-                    description: command.description || '',
-                    tags: JSON.stringify(command.tags || []),
-                    language: command.language || 'plaintext',
-                    created_at: command.created_at || new Date().toISOString(),
-                    updated_at: command.updated_at || new Date().toISOString(),
-                }
-            })
+            toAdd.push({ remotePath: filePath, command: toIndexedLibraryCommandData(command) })
         } else {
             const remoteUpdated = command.updated_at || ''
             const localUpdated = local.updated_at || ''
             if (remoteUpdated > localUpdated) {
+                const indexed = toIndexedLibraryCommandData(command)
                 toUpdate.push({
                     remotePath: filePath,
                     command: {
-                        title: command.title,
-                        body: command.body,
-                        description: command.description || '',
-                        tags: JSON.stringify(command.tags || []),
-                        language: command.language || 'plaintext',
-                        updated_at: command.updated_at || new Date().toISOString(),
+                        title: indexed.title,
+                        body: indexed.body,
+                        description: indexed.description,
+                        tags: indexed.tags,
+                        language: indexed.language,
+                        updated_at: indexed.updated_at,
                     }
                 })
             }
@@ -844,18 +785,6 @@ export async function initLocalLibrary(libraryId: number, name: string, descript
 
 // ── Export as Library (Zip) ─────────────────────────────────────
 
-export function slugify(title: string): string {
-    const slug = title
-        .toLowerCase()
-        .replace(/[^a-z0-9\s_-]/g, '')
-        .trim()
-        .replace(/[\s_]+/g, '-')
-        .replace(/-+/g, '-')
-    if (!slug) return 'untitled'
-    // Filesystem limit: 255 bytes minus .json extension
-    return slug.slice(0, 200)
-}
-
 export interface ExportLibraryInput {
     name: string
     description: string
@@ -907,20 +836,18 @@ export async function exportAsLibrary(input: ExportLibraryInput): Promise<string
         }
         usedNames.add(fileName)
 
-        const commandData = {
-            snipforge: 'command' as const,
-            id: createCommandId(),
+        const commandData = buildLibraryCommandFileData({
             title: cmd.title,
             body: cmd.body,
-            description: cmd.description || '',
+            description: cmd.description,
             tags: cmd.tags,
-            language: cmd.language || 'plaintext',
+            language: cmd.language,
             created_at: cmd.created_at,
             updated_at: cmd.updated_at,
-        }
+        }, createCommandId())
         await fs.writeFile(
             path.join(libraryDir, `${fileName}.json`),
-            JSON.stringify(commandData, null, 2) + '\n',
+            serializeLibraryCommandFile(commandData),
             'utf8'
         )
     }
@@ -956,22 +883,7 @@ export function onFileWatcherSync(cb: (libraryId: number, result: SyncResult) =>
 async function readCommandFile(filePath: string): Promise<RemoteCommand | null> {
     try {
         const content = await fs.readFile(filePath, 'utf8')
-        const parsed = JSON.parse(content)
-        if (
-            typeof parsed.title === 'string' && parsed.title.trim() &&
-            typeof parsed.body === 'string' && parsed.body.trim()
-        ) {
-            return {
-                id: normalizeCommandId(parsed.id) || undefined,
-                title: parsed.title,
-                body: parsed.body,
-                description: parsed.description || '',
-                tags: Array.isArray(parsed.tags) ? parsed.tags : [],
-                language: parsed.language || 'plaintext',
-                created_at: parsed.created_at || new Date().toISOString(),
-                updated_at: parsed.updated_at || new Date().toISOString(),
-            }
-        }
+        return parseLibraryCommandFile(JSON.parse(content))
     } catch {
         // Invalid JSON or unreadable — skip
     }
@@ -1023,15 +935,7 @@ async function processBatch(libraryId: number): Promise<void> {
         const command = await readCommandFile(filePath)
         if (!command) continue
 
-        const dbCommand = {
-            title: command.title,
-            body: command.body,
-            description: command.description,
-            tags: JSON.stringify(command.tags),
-            language: command.language,
-            created_at: command.created_at,
-            updated_at: command.updated_at,
-        }
+        const dbCommand = toIndexedLibraryCommandData(command)
 
         if (!existing) {
             // New file — add (skip if body already exists locally)

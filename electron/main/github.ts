@@ -1,6 +1,13 @@
 import { safeStorage } from 'electron'
 import * as db from './database'
 import type { GitHubUser, LibraryManifest, LibraryPermission, RemoteCommand, SyncResult, Library, BulkPublishResult, DiscoveredLibrary } from '../../shared/types'
+import {
+    buildLibraryCommandFileData,
+    parseLibraryCommandFile,
+    serializeLibraryCommandFile,
+    slugify,
+    toIndexedLibraryCommandData,
+} from '../../shared/library-command'
 
 // ── Configuration ─────────────────────────────────────────────────
 // GitHub OAuth App client_id (public — safe to embed, no secret needed)
@@ -281,21 +288,12 @@ function parseCommandEntries(entries: TreeEntry[], dirPath: string): Array<{ pat
         if (!entry.object?.text) continue
 
         try {
-            const parsed = JSON.parse(entry.object.text)
-            if (typeof parsed.title === 'string' && parsed.title.trim() && typeof parsed.body === 'string' && parsed.body.trim()) {
-                commands.push({
-                    path: dirPath ? `${dirPath}/${entry.name}` : entry.name,
-                    command: {
-                        title: parsed.title,
-                        body: parsed.body,
-                        description: parsed.description || '',
-                        tags: Array.isArray(parsed.tags) ? parsed.tags : [],
-                        language: parsed.language || 'plaintext',
-                        created_at: parsed.created_at || new Date().toISOString(),
-                        updated_at: parsed.updated_at || new Date().toISOString(),
-                    },
-                })
-            }
+            const command = parseLibraryCommandFile(JSON.parse(entry.object.text))
+            if (!command) continue
+            commands.push({
+                path: dirPath ? `${dirPath}/${entry.name}` : entry.name,
+                command,
+            })
         } catch {
             // Not valid JSON or not a command — skip
         }
@@ -665,15 +663,7 @@ function doSubscribe(githubRepo: string, browseResult: Awaited<ReturnType<typeof
         .filter(({ command }) => !localBodies.has(command.body.trim()))
         .map(({ path, command }) => ({
             remotePath: path,
-            command: {
-                title: command.title,
-                body: command.body,
-                description: command.description || '',
-                tags: JSON.stringify(command.tags || []),
-                language: command.language || 'plaintext',
-                created_at: command.created_at || new Date().toISOString(),
-                updated_at: command.updated_at || new Date().toISOString(),
-            }
+            command: toIndexedLibraryCommandData(command),
         }))
 
     const syncResult = db.syncRemoteCommands(libraryId, context.latestSha, toAdd, [], [])
@@ -751,32 +741,22 @@ export async function syncLibrary(libraryId: number, force = false): Promise<Syn
             if (localBodies.has(command.body.trim())) continue
 
             // New command
-            toAdd.push({
-                remotePath: path,
-                command: {
-                    title: command.title,
-                    body: command.body,
-                    description: command.description || '',
-                    tags: JSON.stringify(command.tags || []),
-                    language: command.language || 'plaintext',
-                    created_at: command.created_at || new Date().toISOString(),
-                    updated_at: command.updated_at || new Date().toISOString(),
-                }
-            })
+            toAdd.push({ remotePath: path, command: toIndexedLibraryCommandData(command) })
         } else {
             // Check if updated (compare updated_at timestamps)
             const remoteUpdated = command.updated_at || ''
             const localUpdated = local.updated_at || ''
             if (remoteUpdated > localUpdated) {
+                const indexed = toIndexedLibraryCommandData(command)
                 toUpdate.push({
                     remotePath: path,
                     command: {
-                        title: command.title,
-                        body: command.body,
-                        description: command.description || '',
-                        tags: JSON.stringify(command.tags || []),
-                        language: command.language || 'plaintext',
-                        updated_at: command.updated_at || new Date().toISOString(),
+                        title: indexed.title,
+                        body: indexed.body,
+                        description: indexed.description,
+                        tags: indexed.tags,
+                        language: indexed.language,
+                        updated_at: indexed.updated_at,
                     }
                 })
             }
@@ -893,24 +873,8 @@ export async function getRepoFolders(repoUrl: string): Promise<string[]> {
 
 // ── Publishing ────────────────────────────────────────────────────
 
-function slugify(title: string): string {
-    return title
-        .toLowerCase()
-        .replace(/[^a-z0-9\s-]/g, '')   // strip non-alphanumeric (keep spaces/hyphens)
-        .trim()
-        .replace(/[\s_]+/g, '-')          // spaces/underscores → hyphens
-        .replace(/-+/g, '-')              // collapse multiple hyphens
-        || 'untitled'
-}
-
 function createCommandId(): string {
-    return crypto.randomUUID().toLowerCase()
-}
-
-function normalizeCommandId(value: unknown): string | null {
-    return typeof value === 'string' && /^[0-9a-f-]{36}$/.test(value)
-        ? value.toLowerCase()
-        : null
+    return globalThis.crypto.randomUUID().toLowerCase()
 }
 
 export async function publishCommand(
@@ -932,19 +896,16 @@ export async function publishCommand(
     const filename = `${slugify(command.title)}.json`
     const filePath = `${manifestDir}${filename}`
 
-    // Build the command JSON content
     const now = new Date().toISOString()
-    const commandJson = {
-        snipforge: 'command' as const,
-        id: createCommandId(),
+    let commandJson = buildLibraryCommandFileData({
         title: command.title,
         body: command.body,
-        description: command.description || '',
+        description: command.description,
         tags: command.tags,
-        language: command.language || 'plaintext',
+        language: command.language,
         created_at: now,
         updated_at: now,
-    }
+    }, createCommandId(), now)
 
     // Check if file already exists (need SHA for update)
     let existingSha: string | undefined
@@ -956,20 +917,24 @@ export async function publishCommand(
         // Preserve original created_at from existing file
         try {
             const existingContent = Buffer.from(existing.content, 'base64').toString('utf8')
-            const existingCommand = JSON.parse(existingContent)
-            const existingId = normalizeCommandId(existingCommand.id)
-            if (existingId) {
-                commandJson.id = existingId
-            }
-            if (existingCommand.created_at) {
-                commandJson.created_at = existingCommand.created_at
+            const existingCommand = parseLibraryCommandFile(JSON.parse(existingContent), now)
+            if (existingCommand) {
+                commandJson = buildLibraryCommandFileData({
+                    title: command.title,
+                    body: command.body,
+                    description: command.description,
+                    tags: command.tags,
+                    language: command.language,
+                    created_at: existingCommand.created_at,
+                    updated_at: now,
+                }, existingCommand.id || commandJson.id, now)
             }
         } catch { /* keep the new created_at */ }
     } else if (checkRes.status !== 404) {
         throw new Error(`Failed to check file path: ${checkRes.status}`)
     }
 
-    const content = Buffer.from(JSON.stringify(commandJson, null, 2) + '\n').toString('base64')
+    const content = Buffer.from(serializeLibraryCommandFile(commandJson)).toString('base64')
     const commitMessage = existingSha
         ? `Update ${command.title}`
         : `Add ${command.title}`
