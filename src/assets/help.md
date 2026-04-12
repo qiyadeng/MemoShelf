@@ -16,9 +16,6 @@
 - **Shift+C** Copy raw template (variables stay as `{{placeholders}}`)
 - **N** Add new command
 - **E** Edit selected command
-- **P** Publish selected command to a library
-- **Shift+P** Bulk publish commands
-- **U** Remove selected remote command from a library
 - **Backspace** Delete selected command
 - **⌘⇧Space** (Mac) / **Ctrl⇧Space** (Windows/Linux) Show/hide SnipForge
 
@@ -43,10 +40,7 @@ Libraries are collections of commands you can subscribe to and sync from GitHub.
 To subscribe, paste a GitHub repo URL in Settings → Libraries. If the repo contains multiple libraries, you'll be asked to pick one.
 
 Sync pulls the latest commands from a subscribed library — manually or automatically (toggle per-library in Settings). You can also open a local folder as a library to load commands from `.json` files on disk.
-
-Library owners and curators can publish commands back with **P**, bulk publish with **Shift+P**, or export a library from Settings → Libraries.
-
-Editing a remote command detaches it from its library — it becomes your local copy. The remote original returns on next sync.
+Commands from subscribed libraries show their source in the list, but row actions stay limited to copy, edit, and delete. Library-level sync and export live in Settings → Libraries.
 
 ## Export & Import
 

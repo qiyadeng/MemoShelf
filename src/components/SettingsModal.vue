@@ -901,9 +901,6 @@ const DEFAULT_SHORTCUTS: Record<string, string> = {
   'action.copyTemplate': 'Shift+c',
   'action.new': 'n',
   'action.edit': 'e',
-  'action.publish': 'p',
-  'action.bulkPublish': 'Shift+p',
-  'action.unpublish': 'u',
   'action.delete': 'Backspace',
 }
 
@@ -914,9 +911,6 @@ const shortcutActions = [
   { id: 'action.copyTemplate', label: 'Copy template' },
   { id: 'action.new', label: 'New command' },
   { id: 'action.edit', label: 'Edit command' },
-  { id: 'action.publish', label: 'Publish' },
-  { id: 'action.bulkPublish', label: 'Bulk publish' },
-  { id: 'action.unpublish', label: 'Unpublish' },
   { id: 'action.delete', label: 'Delete command' },
 ]
 

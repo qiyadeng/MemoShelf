@@ -9,9 +9,8 @@ import HelpModal from './components/HelpModal.vue'
 import DescriptionModal from './components/DescriptionModal.vue'
 import TagSelector from './components/TagSelector.vue'
 import DuplicateResolutionModal from './components/DuplicateResolutionModal.vue'
-import BulkPublishModal from './components/BulkPublishModal.vue'
 import UpdateBanner from './components/UpdateBanner.vue'
-import { Copy, Edit, Trash2, HelpCircle, Settings, Anvil, CirclePlus, Upload, CloudOff, PackagePlus } from 'lucide-vue-next'
+import { Copy, Edit, Trash2, HelpCircle, Settings, Anvil, CirclePlus } from 'lucide-vue-next'
 import { VList } from 'virtua/vue'
 import { extractVariables, substituteVariables, hasVariables, highlightVariables, type VariableValues } from './utils/variables'
 import { useSettings } from './composables/useSettings'
@@ -131,25 +130,6 @@ const descriptionModalContent = ref('')
 const showDuplicateModal = ref(false)
 const pendingDuplicates = ref<DuplicateMatch[]>([])
 const pendingImportCommands = ref<ImportCommand[]>([])
-
-// Publish modal state
-const showPublishModal = ref(false)
-const publishTargetCommandId = ref<number | null>(null)
-const publishing = ref(false)
-const unpublishing = ref(false)
-const showBulkPublishModal = ref(false)
-
-// Initialized libraries (can publish to these — owner or curator only)
-const initializedLibraries = computed(() => {
-  return Array.from(libraries.value.values()).filter(lib => lib.manifest_path)
-})
-const publishableLibraries = computed(() => {
-  return initializedLibraries.value.filter(lib => lib.permission === 'owner' || lib.permission === 'curator')
-})
-const canUnpublish = (libraryId: number): boolean => {
-  const lib = libraries.value.get(libraryId)
-  return !!(lib?.manifest_path && (lib.permission === 'owner' || lib.permission === 'curator'))
-}
 
 // Notification state
 const notificationMessage = ref('')
@@ -791,71 +771,6 @@ const deleteCommand = async (id: number) => {
     modalMode.value = 'edit'
     showModal.value = true
   }
-  // Publish command to a library
-  const startPublish = (commandId: number) => {
-    const libs = publishableLibraries.value
-    if (libs.length === 0) {
-      showNotificationToast('No initialized libraries — subscribe and init a library first')
-      return
-    }
-    if (libs.length === 1) {
-      // Only one library — publish directly
-      doPublish(libs[0].id, commandId)
-    } else {
-      // Multiple libraries — show picker
-      publishTargetCommandId.value = commandId
-      showPublishModal.value = true
-    }
-  }
-
-  const doPublish = async (libraryId: number, commandId: number) => {
-    publishing.value = true
-    showPublishModal.value = false
-    try {
-      const result = await window.electronAPI.library.publish(libraryId, commandId)
-      if (result.success) {
-        const lib = libraries.value.get(libraryId)
-        const action = result.created ? 'Published' : 'Updated'
-        showNotificationToast(`${action} to ${lib?.name || 'library'}`)
-      } else {
-        showNotificationToast(`Publish failed: ${result.error}`)
-      }
-    } catch (error) {
-      console.error('Publish error:', error)
-      showNotificationToast('Failed to publish command')
-    } finally {
-      publishing.value = false
-    }
-  }
-
-  // Unpublish (remove from library repo)
-  const startUnpublish = async (commandId: number) => {
-    const command = commands.value.find(c => c.id === commandId)
-    if (!command || command.source !== 'remote' || !command.library_id || !command.remote_path) return
-
-    const lib = libraries.value.get(command.library_id)
-    if (!lib?.manifest_path) return
-
-    const confirmed = window.confirm(`Remove "${command.title}" from ${lib.name}?\n\nThis deletes the file from the GitHub repo. Subscribers will lose this command on their next sync.`)
-    if (!confirmed) return
-
-    unpublishing.value = true
-    try {
-      const result = await window.electronAPI.library.unpublish(command.library_id, command.remote_path)
-      if (result.success) {
-        showNotificationToast(`Removed from ${lib.name}`)
-        await loadCommands()
-      } else {
-        showNotificationToast(`Unpublish failed: ${result.error}`)
-      }
-    } catch (error) {
-      console.error('Unpublish error:', error)
-      showNotificationToast('Failed to remove from library')
-    } finally {
-      unpublishing.value = false
-    }
-  }
-
   // Handle modal save
   const handleModalSave = async (formData: { title: string; body: string; description: string; tags: string; language: string }) =>
    {
@@ -903,9 +818,6 @@ const DEFAULT_SHORTCUTS: Record<string, string> = {
   'action.copyTemplate': 'Shift+c',
   'action.new': 'n',
   'action.edit': 'e',
-  'action.publish': 'p',
-  'action.bulkPublish': 'Shift+p',
-  'action.unpublish': 'u',
   'action.delete': 'Backspace',
 }
 
@@ -959,8 +871,6 @@ const handleKeyboard = (event: KeyboardEvent) => {
       showHelpModal.value = false
     } else if (showDescriptionModal.value) {
       showDescriptionModal.value = false
-    } else if (showPublishModal.value) {
-      showPublishModal.value = false
     } else if (showFilterDropdown.value) {
       showFilterDropdown.value = false
     } else if (selectedCommandId.value !== null) {
@@ -986,7 +896,7 @@ const handleKeyboard = (event: KeyboardEvent) => {
   }
 
   // Don't process hotkeys when modal is open or filter dropdown is open
-  if (showModal.value || showVariableModal.value || showSettingsModal.value || showHelpModal.value || showDescriptionModal.value || showDuplicateModal.value || showPublishModal.value || showFilterDropdown.value) return
+  if (showModal.value || showVariableModal.value || showSettingsModal.value || showHelpModal.value || showDescriptionModal.value || showDuplicateModal.value || showFilterDropdown.value) return
 
   // Don't process hotkeys when user is typing in an input field
   if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return
@@ -1020,17 +930,6 @@ const handleKeyboard = (event: KeyboardEvent) => {
     selectedCommandForEdit.value = null
     modalMode.value = 'add'
     showModal.value = true
-  } else if (matchAction(event, 'action.bulkPublish')) {
-    event.preventDefault()
-    if (publishableLibraries.value.length > 0) showBulkPublishModal.value = true
-  } else if (matchAction(event, 'action.publish')) {
-    event.preventDefault()
-    const selectedCommand = filteredCommands.value.find(cmd => cmd.id === selectedCommandId.value)
-    if (selectedCommand) startPublish(selectedCommand.id)
-  } else if (matchAction(event, 'action.unpublish')) {
-    event.preventDefault()
-    const selectedCommand = filteredCommands.value.find(cmd => cmd.id === selectedCommandId.value)
-    if (selectedCommand && selectedCommand.source === 'remote' && selectedCommand.library_id && canUnpublish(selectedCommand.library_id)) startUnpublish(selectedCommand.id)
   } else if (matchAction(event, 'action.delete')) {
     event.preventDefault()
     const selectedCommand = filteredCommands.value.find(cmd => cmd.id === selectedCommandId.value)
@@ -1150,14 +1049,6 @@ const openDescriptionModal = (title: string, description: string) => {
         <button class="add-button" @click="modalMode = 'add'; selectedCommandForEdit = null; showModal = true" title="Add new command (n)">
           <CirclePlus :size="18" />
         </button>
-        <button
-          v-if="publishableLibraries.length > 0"
-          class="bulk-publish-button"
-          @click="showBulkPublishModal = true"
-          title="Bulk publish (Shift+P)"
-        >
-          <PackagePlus :size="18" />
-        </button>
         <button class="help-button" @click="showHelpModal = true" title="Help">
           <HelpCircle :size="16" />
         </button>
@@ -1240,25 +1131,6 @@ const openDescriptionModal = (title: string, description: string) => {
             <div class="command-actions">
               <button @click.stop="copyCommand(command)" tabindex="-1" title="Copy command">
                 <Copy :size="16" />
-              </button>
-              <button
-                v-if="publishableLibraries.length > 0 && command.source !== 'remote'"
-                @click.stop="startPublish(command.id)"
-                tabindex="-1"
-                title="Publish to library"
-                :disabled="publishing"
-              >
-                <Upload :size="16" />
-              </button>
-              <button
-                v-if="command.source === 'remote' && command.library_id && command.remote_path && canUnpublish(command.library_id)"
-                @click.stop="startUnpublish(command.id)"
-                tabindex="-1"
-                title="Remove from library"
-                :disabled="unpublishing"
-                class="unpublish-btn"
-              >
-                <CloudOff :size="16" />
               </button>
               <button @click.stop="editCommand(command.id)" tabindex="-1" title="Edit command">
                 <Edit :size="16" />
@@ -1348,35 +1220,6 @@ const openDescriptionModal = (title: string, description: string) => {
       :duplicates="pendingDuplicates"
       @cancel="showDuplicateModal = false"
       @apply="handleDuplicateResolution"
-    />
-
-    <!-- Publish to Library Modal -->
-    <div v-if="showPublishModal" class="modal-overlay" @click.self="showPublishModal = false">
-      <div class="publish-modal">
-        <h3>Publish to Library</h3>
-        <p class="publish-description">Choose a library to publish this command to:</p>
-        <div class="publish-library-list">
-          <button
-            v-for="lib in publishableLibraries"
-            :key="lib.id"
-            class="publish-library-option"
-            @click="doPublish(lib.id, publishTargetCommandId!)"
-          >
-            <span class="publish-library-name">{{ lib.name }}</span>
-            <span class="publish-library-repo">{{ lib.github_repo }}</span>
-          </button>
-        </div>
-        <button class="publish-cancel" @click="showPublishModal = false">Cancel</button>
-      </div>
-    </div>
-
-    <!-- Bulk Publish Modal -->
-    <BulkPublishModal
-      :show="showBulkPublishModal"
-      :commands="commands"
-      :libraries="publishableLibraries"
-      @cancel="showBulkPublishModal = false"
-      @done="showBulkPublishModal = false; loadCommands()"
     />
 
     <!-- Notification Toast -->
