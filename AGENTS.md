@@ -17,11 +17,11 @@ SnipForge is a desktop app (Electron + Vue 3 + TypeScript) for saving, searching
 
 **Doc-first:**
 1. Update the feature doc with the plan before writing code
-2. Implement, referencing the GitHub issue in commits (`ref #N` or `fixes #N`)
+2. Implement, referencing the GitHub issue in commits. Use `fixes #N` for bug fixes, rework, and refactor issues. Use `closes #N` for feature issues and chore issues when the todo item is complete and should close automatically.
 3. Update the feature doc with final notes and mark deliverables complete
 4. The feature doc is the source of truth — for the plan, the roadmap, and the dev log
 
-**GitHub Issues** are the work tracking system. Each session starts with an issue, ends with a commit that references it. Issues have acceptance criteria and point to the relevant feature doc.
+**GitHub Issues** are the work tracking system. Each session starts with an issue, ends with a commit that references it. Issues have acceptance criteria and point to the relevant feature doc. We use GitHub issues as the todo list, so closure semantics are intentional: `fixes #N` is for bug/rework/refactor issues, while `closes #N` is for completed feature/chore issues that should leave the todo list.
 
 **User-first mindset.** We're not building code for code's sake. Every feature exists because a person needs it. Think about how functional it is for the end user — that's the driver, not how fancy the implementation is.
 
@@ -99,7 +99,9 @@ pnpm build        # production build
 
 - Conventional commits: `feat:`, `fix:`, `docs:`, `refactor:`, `chore:`
 - Short, focused messages — what changed and why, not a paragraph
-- Reference GitHub issues: `feat: detach remote commands on edit (fixes #1)`
+- Reference GitHub issues explicitly:
+  - Bug fix, rework, or refactor issue: `fix: harden sync bookkeeping (fixes #25)`
+  - Completed feature or chore todo item: `feat: add CLI v1 for library search (closes #31)`
 
 ### Release Process
 

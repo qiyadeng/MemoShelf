@@ -255,7 +255,7 @@ ALTER TABLE commands ADD COLUMN remote_path TEXT;
 Every issue follows this cycle:
 
 1. **Doc first** — update the feature doc (`docs/remote-libraries.md`) with the plan before writing code
-2. **Implement** — write the code, referencing the issue number in commits (`ref #N` or `fixes #N`)
+2. **Implement** — write the code, referencing the issue number in commits. Use `fixes #N` for bug fixes, rework, and refactor issues. Use `closes #N` for feature issues and chore issues when the todo item is complete and should close automatically.
 3. **Update docs** — mark deliverables complete, add implementation notes, record any deviations
 4. **Commit** — commit message references the issue; the feature doc is always up to date
 
