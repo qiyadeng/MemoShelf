@@ -319,6 +319,15 @@ function toLibraryContract(row: LibraryRow): Library {
             manifest_path: row.manifest_path,
             materialized: isLocal && !!row.manifest_path,
         },
+        working_tree: {
+            state: localPath ? 'not_repo' : 'no_working_copy',
+            has_changes: false,
+            modified: 0,
+            added: 0,
+            deleted: 0,
+            checked_at: null,
+            error: null,
+        },
     }
 }
 

@@ -31,6 +31,24 @@ export interface LibraryWorkingCopyState {
   materialized: boolean
 }
 
+export type LibraryWorkingTreeState =
+  | 'clean'
+  | 'dirty'
+  | 'not_repo'
+  | 'git_unavailable'
+  | 'no_working_copy'
+  | 'error'
+
+export interface LibraryWorkingTreeStatus {
+  state: LibraryWorkingTreeState
+  has_changes: boolean
+  modified: number
+  added: number
+  deleted: number
+  checked_at: string | null
+  error: string | null
+}
+
 export type CommandSource = 'local' | 'remote'
 
 export type LibraryType = 'github' | 'local'
@@ -52,6 +70,7 @@ export interface Library {
   local_path: string | null
   origin: LibraryOrigin | null
   working_copy: LibraryWorkingCopyState
+  working_tree: LibraryWorkingTreeStatus
 }
 
 export interface LibraryCommand {

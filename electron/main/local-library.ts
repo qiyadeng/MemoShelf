@@ -3,11 +3,13 @@ import { promises as fs, watch, type FSWatcher } from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import crypto from 'node:crypto'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import AdmZip from 'adm-zip'
 import * as db from './database'
 import * as settings from './settings'
-import type { BatchCommandMutationResult, CommandMutationResult, DiscoveredLibrary, Library, LibraryManifest, RemoteCommand, SyncResult } from '../../shared/types'
+import type { BatchCommandMutationResult, CommandMutationResult, DiscoveredLibrary, Library, LibraryManifest, LibraryWorkingTreeStatus, RemoteCommand, SyncResult } from '../../shared/types'
 import {
     buildLibraryCommandFileData,
     normalizeCommandId,
@@ -38,9 +40,149 @@ const LIBRARY_ATTACHMENTS_DIR = 'attachments'
 const IMAGE_DATA_URI_RE = /^data:(image\/[a-z0-9.+-]+);base64,([a-z0-9+/=]+)$/i
 const IMAGE_TAG_RE = /<img\b[^>]*>/gi
 const IMAGE_SRC_ATTR_RE = /\bsrc=(['"])(.*?)\1/i
+const execFileAsync = promisify(execFile)
+type GitCommandRunner = (args: string[], cwd: string) => Promise<{ stdout: string }>
 
 function commandAttachmentsFolderPath(libraryRoot: string, commandId: string): string {
     return path.join(libraryRoot, LIBRARY_ATTACHMENTS_DIR, commandId)
+}
+
+function createWorkingTreeStatus(
+    overrides: Partial<LibraryWorkingTreeStatus> & Pick<LibraryWorkingTreeStatus, 'state'>
+): LibraryWorkingTreeStatus {
+    return {
+        state: overrides.state,
+        has_changes: overrides.has_changes ?? false,
+        modified: overrides.modified ?? 0,
+        added: overrides.added ?? 0,
+        deleted: overrides.deleted ?? 0,
+        checked_at: overrides.checked_at ?? new Date().toISOString(),
+        error: overrides.error ?? null,
+    }
+}
+
+async function runSystemGit(args: string[], cwd: string): Promise<{ stdout: string }> {
+    const { stdout } = await execFileAsync('git', ['-C', cwd, ...args])
+    return { stdout: String(stdout) }
+}
+
+function parseWorkingTreeCounts(stdout: string): Pick<LibraryWorkingTreeStatus, 'has_changes' | 'modified' | 'added' | 'deleted'> {
+    let modified = 0
+    let added = 0
+    let deleted = 0
+
+    for (const line of stdout.split('\n')) {
+        if (!line.trim()) {
+            continue
+        }
+
+        const code = line.slice(0, 2)
+        const [indexStatus, workTreeStatus] = code
+
+        if (code === '??' || indexStatus === 'A') {
+            added += 1
+            continue
+        }
+
+        if (indexStatus === 'D' || workTreeStatus === 'D') {
+            deleted += 1
+            continue
+        }
+
+        modified += 1
+    }
+
+    return {
+        has_changes: modified > 0 || added > 0 || deleted > 0,
+        modified,
+        added,
+        deleted,
+    }
+}
+
+function isGitMissingError(error: unknown): boolean {
+    const execError = error as NodeJS.ErrnoException | undefined
+    if (!execError) {
+        return false
+    }
+
+    return execError.code === 'ENOENT' || /not found/i.test(execError.message || '')
+}
+
+function isNotRepoError(error: unknown): boolean {
+    const execError = error as NodeJS.ErrnoException | undefined
+    const stderr = typeof (execError as { stderr?: unknown })?.stderr === 'string'
+        ? String((execError as { stderr?: unknown }).stderr)
+        : ''
+    const message = `${execError?.message || ''}\n${stderr}`.toLowerCase()
+
+    return message.includes('not a git repository')
+}
+
+export async function getLibraryWorkingTreeStatus(
+    library: Library,
+    runGit: GitCommandRunner = runSystemGit
+): Promise<LibraryWorkingTreeStatus> {
+    if (!library.local_path) {
+        return createWorkingTreeStatus({ state: 'no_working_copy' })
+    }
+
+    try {
+        await runGit(['rev-parse', '--is-inside-work-tree'], library.local_path)
+    } catch (error) {
+        if (isGitMissingError(error)) {
+            return createWorkingTreeStatus({
+                state: 'git_unavailable',
+                error: 'System git is unavailable on this machine.',
+            })
+        }
+
+        if (isNotRepoError(error)) {
+            return createWorkingTreeStatus({ state: 'not_repo' })
+        }
+
+        return createWorkingTreeStatus({
+            state: 'error',
+            error: (error as Error).message,
+        })
+    }
+
+    try {
+        const { stdout } = await runGit([
+            'status',
+            '--porcelain=1',
+            '--untracked-files=all',
+            '--',
+            '.',
+        ], library.local_path)
+        const counts = parseWorkingTreeCounts(stdout)
+        return createWorkingTreeStatus({
+            state: counts.has_changes ? 'dirty' : 'clean',
+            ...counts,
+        })
+    } catch (error) {
+        if (isGitMissingError(error)) {
+            return createWorkingTreeStatus({
+                state: 'git_unavailable',
+                error: 'System git is unavailable on this machine.',
+            })
+        }
+
+        return createWorkingTreeStatus({
+            state: 'error',
+            error: (error as Error).message,
+        })
+    }
+}
+
+export async function getAllLibrariesWithWorkingTreeStatus(): Promise<Library[]> {
+    const libraries = db.getAllLibraries()
+    return Promise.all(
+        libraries.map(async (library) => ({
+            ...library,
+            working_tree: await getLibraryWorkingTreeStatus(library),
+        }))
+    )
 }
 
 function toPosixPath(value: string): string {

@@ -2,6 +2,21 @@
 
 Library Working Copies reframes SnipForge around one simple rule: every command lives in a local library folder, and some libraries may also have a Git remote origin. The app should treat commands as files in a working copy, not as separate "local" and "remote" command types.
 
+
+## Active Notes
+
+### Issue #48: library-level working tree status using system `git`
+
+Plan:
+- detect working-tree state at the library level by shelling out to system `git` instead of bundling a runtime
+- expose a small backend summary on each library contract so the current library list can consume it later without adding the full Changes workflow yet
+- make fallback explicit for both "git is not installed" and "this library is not inside a git work tree" so later UI work can message those states cleanly
+
+Final notes:
+- `shared/types.ts` now carries a library-level `working_tree` summary with explicit states for clean, dirty, not-a-repo, no-working-copy, git-unavailable, and unexpected command errors
+- `electron/main/local-library.ts` shells out to system `git` for `rev-parse` and `status --porcelain`, scopes results to the library folder, and returns modified/new/deleted counts without bundling Git
+- `library:getAll` now returns libraries enriched with working-tree status so the current library list has backend data ready for a later Changes UI without pulling #49 or #50 forward
+
 ## Why This Exists
 
 The current mental model still leaks old architecture:

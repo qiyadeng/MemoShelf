@@ -1,13 +1,17 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import path from 'node:path'
 import os from 'node:os'
+import { execFile } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import { pathToFileURL } from 'node:url'
+import { promisify } from 'node:util'
 import * as db from '../electron/main/database'
 import * as settings from '../electron/main/settings'
 import {
     createLocalLibraryCommands,
     createLocalLibraryCommand,
+    getAllLibrariesWithWorkingTreeStatus,
+    getLibraryWorkingTreeStatus,
     deleteLocalLibraryCommands,
     deleteLocalLibraryCommand,
     migrateLegacyDbOnlyCommandsToDefaultLibrary,
@@ -22,6 +26,7 @@ import {
 
 let tmpDir: string
 const TINY_PNG_DATA_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2pKxQAAAAASUVORK5CYII='
+const execFileAsync = promisify(execFile)
 
 beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'snipforge-test-lib-'))
@@ -200,6 +205,149 @@ describe('scanLocalFolder', () => {
 
         const result = await scanLocalFolder(tmpDir)
         expect(result.commands).toHaveLength(0)
+    })
+})
+
+describe('library working tree status', () => {
+    async function runGit(cwd: string, args: string[]): Promise<string> {
+        const { stdout } = await execFileAsync('git', ['-C', cwd, ...args])
+        return String(stdout)
+    }
+
+    async function initGitRepo(repoPath: string): Promise<void> {
+        await runGit(repoPath, ['init'])
+        await runGit(repoPath, ['config', 'user.name', 'SnipForge Tests'])
+        await runGit(repoPath, ['config', 'user.email', 'tests@snipforge.local'])
+    }
+
+    it('reports a clean state for a clean git-backed library', async () => {
+        const repoRoot = path.join(tmpDir, 'clean-repo')
+        await fs.mkdir(repoRoot, { recursive: true })
+        await fs.writeFile(path.join(repoRoot, '.snipforge.json'), JSON.stringify({
+            name: 'Clean Library',
+            description: '',
+            format_version: '1.0',
+        }))
+        await fs.writeFile(path.join(repoRoot, 'clean.json'), JSON.stringify({
+            title: 'Clean',
+            body: 'echo clean',
+        }))
+
+        await initGitRepo(repoRoot)
+        await runGit(repoRoot, ['add', '.'])
+        await runGit(repoRoot, ['commit', '-m', 'initial'])
+
+        const libraryId = db.addLibrary(repoRoot, 'Clean Library', '', '.snipforge.json', 'local', 'owner')
+        const library = db.getAllLibraries().find(item => item.id === libraryId)!
+
+        const status = await getLibraryWorkingTreeStatus(library)
+
+        expect(status.state).toBe('clean')
+        expect(status.has_changes).toBe(false)
+        expect(status.modified).toBe(0)
+        expect(status.added).toBe(0)
+        expect(status.deleted).toBe(0)
+        expect(status.error).toBeNull()
+    })
+
+    it('scopes dirty counts to the library folder inside a git repository', async () => {
+        const repoRoot = path.join(tmpDir, 'repo')
+        const libraryRoot = path.join(repoRoot, 'alpha')
+        await fs.mkdir(libraryRoot, { recursive: true })
+        await fs.writeFile(path.join(libraryRoot, '.snipforge.json'), JSON.stringify({
+            name: 'Alpha',
+            description: '',
+            format_version: '1.0',
+        }))
+        await fs.writeFile(path.join(libraryRoot, 'tracked.json'), JSON.stringify({
+            title: 'Tracked',
+            body: 'echo tracked',
+        }))
+        await fs.writeFile(path.join(libraryRoot, 'delete-me.json'), JSON.stringify({
+            title: 'Delete Me',
+            body: 'echo delete',
+        }))
+        await fs.writeFile(path.join(repoRoot, 'outside.txt'), 'outside\n')
+
+        await initGitRepo(repoRoot)
+        await runGit(repoRoot, ['add', '.'])
+        await runGit(repoRoot, ['commit', '-m', 'initial'])
+
+        await fs.writeFile(path.join(libraryRoot, 'tracked.json'), JSON.stringify({
+            title: 'Tracked',
+            body: 'echo changed',
+        }))
+        await fs.writeFile(path.join(libraryRoot, 'new.json'), JSON.stringify({
+            title: 'New',
+            body: 'echo new',
+        }))
+        await fs.rm(path.join(libraryRoot, 'delete-me.json'))
+        await fs.writeFile(path.join(repoRoot, 'outside.txt'), 'outside changed\n')
+
+        const libraryId = db.addLibrary(libraryRoot, 'Alpha', '', '.snipforge.json', 'local', 'owner')
+        const library = db.getAllLibraries().find(item => item.id === libraryId)!
+
+        const status = await getLibraryWorkingTreeStatus(library)
+
+        expect(status.state).toBe('dirty')
+        expect(status.has_changes).toBe(true)
+        expect(status.modified).toBe(1)
+        expect(status.added).toBe(1)
+        expect(status.deleted).toBe(1)
+    })
+
+    it('returns not_repo when the library folder is not inside a git work tree', async () => {
+        await fs.writeFile(path.join(tmpDir, '.snipforge.json'), JSON.stringify({
+            name: 'Plain Folder',
+            description: '',
+            format_version: '1.0',
+        }))
+
+        const libraryId = db.addLibrary(tmpDir, 'Plain Folder', '', '.snipforge.json', 'local', 'owner')
+        const library = db.getAllLibraries().find(item => item.id === libraryId)!
+
+        const status = await getLibraryWorkingTreeStatus(library)
+
+        expect(status.state).toBe('not_repo')
+        expect(status.has_changes).toBe(false)
+        expect(status.modified).toBe(0)
+        expect(status.added).toBe(0)
+        expect(status.deleted).toBe(0)
+        expect(status.error).toBeNull()
+    })
+
+    it('returns git_unavailable when system git cannot be executed', async () => {
+        const libraryId = db.addLibrary(tmpDir, 'Missing Git', '', '.snipforge.json', 'local', 'owner')
+        const library = db.getAllLibraries().find(item => item.id === libraryId)!
+        const gitMissing = Object.assign(new Error('spawn git ENOENT'), { code: 'ENOENT' })
+
+        const status = await getLibraryWorkingTreeStatus(library, async () => {
+            throw gitMissing
+        })
+
+        expect(status.state).toBe('git_unavailable')
+        expect(status.has_changes).toBe(false)
+        expect(status.error).toContain('System git is unavailable')
+    })
+
+    it('enriches library listings with computed working tree status', async () => {
+        const repoRoot = path.join(tmpDir, 'status-repo')
+        await fs.mkdir(repoRoot, { recursive: true })
+        await fs.writeFile(path.join(repoRoot, '.snipforge.json'), JSON.stringify({
+            name: 'Computed Status',
+            description: '',
+            format_version: '1.0',
+        }))
+        await initGitRepo(repoRoot)
+        await runGit(repoRoot, ['add', '.'])
+        await runGit(repoRoot, ['commit', '-m', 'initial'])
+
+        const libraryId = db.addLibrary(repoRoot, 'Computed Status', '', '.snipforge.json', 'local', 'owner')
+        const libraries = await getAllLibrariesWithWorkingTreeStatus()
+        const library = libraries.find(item => item.id === libraryId)
+
+        expect(library?.working_tree.state).toBe('clean')
+        expect(library?.working_tree.checked_at).toBeTruthy()
     })
 })
 

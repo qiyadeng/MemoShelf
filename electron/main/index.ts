@@ -817,7 +817,7 @@ ipcMain.handle('library:syncAll', async () => {
 
 ipcMain.handle('library:getAll', async () => {
   try {
-    return github.getAllLibraries()
+    return await localLibrary.getAllLibrariesWithWorkingTreeStatus()
   } catch (error) {
     console.error('Library getAll error:', error)
     return []
