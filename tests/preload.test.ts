@@ -39,4 +39,17 @@ describe('preload event subscriptions', () => {
         const listener = on.mock.calls[0]?.[1]
         expect(removeListener).toHaveBeenCalledWith('window-shown', listener)
     })
+
+    it('exposes the origin-based working copy API alongside the legacy subscribe alias', async () => {
+        await import('../electron/preload/index')
+
+        const exposedApi = exposeInMainWorld.mock.calls[0]?.[1]
+        expect(exposedApi).toBeTruthy()
+
+        await exposedApi.library.addWorkingCopyFromOrigin('https://github.com/org/repo', 'sub/path')
+        await exposedApi.library.subscribe('https://github.com/org/repo', 'sub/path')
+
+        expect(invoke).toHaveBeenCalledWith('library:addWorkingCopyFromOrigin', 'https://github.com/org/repo', 'sub/path')
+        expect(invoke).toHaveBeenCalledWith('library:subscribe', 'https://github.com/org/repo', 'sub/path')
+    })
 })

@@ -282,14 +282,38 @@ export function seedTestData(): void {
 
 // ── Library functions ──────────────────────────────────────────────
 
+function toLibraryContract(row: Library): Library {
+    const isLocal = row.type === 'local'
+    const localPath = isLocal ? row.github_repo : null
+
+    return {
+        ...row,
+        local_path: localPath,
+        origin: isLocal
+            ? null
+            : {
+                provider: 'github',
+                url: row.github_repo,
+                ref: row.last_synced_sha,
+            },
+        working_copy: {
+            local_path: localPath,
+            manifest_path: row.manifest_path,
+            materialized: isLocal,
+        },
+    }
+}
+
 export function getAllLibraries(): Library[] {
     if (!db) throw new Error("Database not initialized")
-    return db.prepare("SELECT * FROM libraries ORDER BY created_at DESC").all() as Library[]
+    const rows = db.prepare("SELECT * FROM libraries ORDER BY created_at DESC").all() as Library[]
+    return rows.map(toLibraryContract)
 }
 
 export function getLibraryByRepo(githubRepo: string): Library | undefined {
     if (!db) throw new Error("Database not initialized")
-    return db.prepare("SELECT * FROM libraries WHERE github_repo = ?").get(githubRepo) as Library | undefined
+    const row = db.prepare("SELECT * FROM libraries WHERE github_repo = ?").get(githubRepo) as Library | undefined
+    return row ? toLibraryContract(row) : undefined
 }
 
 export function addLibrary(githubRepo: string, name: string, description: string, manifestPath?: string, type: LibraryType = 'github', permission: LibraryPermission = 'consumer'): number {

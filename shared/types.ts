@@ -17,7 +17,19 @@ export interface CommandWithTags extends Command {
   tagsNormalized: string[]
 }
 
-// Remote Library types
+// Library contract types
+
+export interface LibraryOrigin {
+  provider: 'github'
+  url: string
+  ref: string | null
+}
+
+export interface LibraryWorkingCopyState {
+  local_path: string | null
+  manifest_path: string | null
+  materialized: boolean
+}
 
 export type CommandSource = 'local' | 'remote'
 
@@ -37,9 +49,12 @@ export interface Library {
   auto_sync: number             // 0 = off, 1 = on (SQLite integer boolean)
   permission: LibraryPermission // 'owner' | 'curator' | 'consumer'
   created_at: string
+  local_path: string | null
+  origin: LibraryOrigin | null
+  working_copy: LibraryWorkingCopyState
 }
 
-export interface RemoteCommand {
+export interface LibraryCommand {
   id?: string
   title: string
   body: string
@@ -49,6 +64,9 @@ export interface RemoteCommand {
   created_at: string
   updated_at: string
 }
+
+// Legacy alias kept for compatibility with the shipped remote-library model.
+export type RemoteCommand = LibraryCommand
 
 export interface LibraryManifest {
   snipforge?: string
@@ -93,7 +111,7 @@ export interface BulkPublishResult {
 export interface DiscoveredLibrary {
   name: string
   description: string
-  path: string          // directory path (subpath to use for scoped subscribe)
+  path: string          // directory path (subpath to use for scoped working copy lookup)
   manifestPath: string  // full path to .snipforge.json
   commandCount: number  // number of command JSON files in the directory
 }

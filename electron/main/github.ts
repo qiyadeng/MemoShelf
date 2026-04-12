@@ -1,6 +1,6 @@
 import { safeStorage } from 'electron'
 import * as db from './database'
-import type { GitHubUser, LibraryManifest, LibraryPermission, RemoteCommand, SyncResult, Library, BulkPublishResult, DiscoveredLibrary } from '../../shared/types'
+import type { GitHubUser, LibraryManifest, LibraryPermission, LibraryCommand, SyncResult, Library, BulkPublishResult, DiscoveredLibrary } from '../../shared/types'
 import {
     buildLibraryCommandFileData,
     parseLibraryCommandFile,
@@ -279,9 +279,9 @@ async function getRepoContextWithTree(owner: string, repo: string, dirPath: stri
     }
 }
 
-/** Parse GraphQL tree entries into commands. dirPath is the manifest's parent directory (for building remote_path). */
-function parseCommandEntries(entries: TreeEntry[], dirPath: string): Array<{ path: string; command: RemoteCommand }> {
-    const commands: Array<{ path: string; command: RemoteCommand }> = []
+/** Parse GraphQL tree entries into commands. dirPath is the manifest's parent directory. */
+function parseCommandEntries(entries: TreeEntry[], dirPath: string): Array<{ path: string; command: LibraryCommand }> {
+    const commands: Array<{ path: string; command: LibraryCommand }> = []
 
     for (const entry of entries) {
         if (entry.type !== 'blob' || !entry.name.endsWith('.json') || entry.name === '.snipforge.json') continue
@@ -555,7 +555,7 @@ async function getRepoTree(owner: string, repo: string, branch: string): Promise
  * - If no subpath → REST recursive tree to find manifest, then GraphQL for contents
  * Returns manifest, its path, and all parsed commands.
  */
-export async function browseLibrary(repoUrl: string, ctx?: RepoContext): Promise<{ manifest: LibraryManifest; manifestPath: string; commands: Array<{ path: string; command: RemoteCommand }>; context: RepoContext }> {
+export async function browseLibrary(repoUrl: string, ctx?: RepoContext): Promise<{ manifest: LibraryManifest; manifestPath: string; commands: Array<{ path: string; command: LibraryCommand }>; context: RepoContext }> {
     const { owner, repo, subpath } = parseRepoUrl(repoUrl)
 
     if (subpath) {
@@ -607,7 +607,7 @@ export async function browseLibrary(repoUrl: string, ctx?: RepoContext): Promise
     return { manifest, manifestPath: manifestFile.path, commands, context }
 }
 
-export async function subscribeToLibrary(
+export async function addWorkingCopyFromOrigin(
     repoUrl: string,
     subpath?: string
 ): Promise<{ library: Library; syncResult: SyncResult } | { needsPick: true; libraries: DiscoveredLibrary[] }> {
@@ -618,13 +618,13 @@ export async function subscribeToLibrary(
     // Build the stored identifier — includes subpath for multi-library repos
     const githubRepo = effectiveSubpath ? `${owner}/${repo}/${effectiveSubpath}` : `${owner}/${repo}`
 
-    // Check if already subscribed (exact match on full identifier)
+    // Check if already present (exact match on full identifier)
     const existing = db.getLibraryByRepo(githubRepo)
     if (existing) {
-        throw new Error(`Already subscribed to ${githubRepo}`)
+        throw new Error(`Working copy already exists for ${githubRepo}`)
     }
 
-    // If no subpath, check for multiple libraries before subscribing
+    // If no subpath, check for multiple libraries before adding the working copy
     if (!effectiveSubpath) {
         const context = await getRepoContext(owner, repo)
         const discovered = await discoverLibraries(owner, repo, context)
@@ -638,22 +638,22 @@ export async function subscribeToLibrary(
             // Single library — use scoped browse (efficient: 1 GraphQL call)
             const scopedUrl = discovered[0].path ? `${owner}/${repo}/${discovered[0].path}` : `${owner}/${repo}`
             const browseResult = await browseLibrary(scopedUrl, context)
-            return doSubscribe(githubRepo, browseResult)
+            return doAddWorkingCopy(githubRepo, browseResult)
         }
 
-        // No manifests — subscribe without syncing
+        // No manifests — add the working copy without syncing
         const repoName = repo.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
         db.addLibrary(githubRepo, repoName, '', undefined, 'github', context.permission)
         const library = db.getLibraryByRepo(githubRepo)!
         return { library, syncResult: { added: 0, updated: 0, removed: 0, errors: [] } }
     }
 
-    // Subpath known — direct scoped subscribe
+    // Subpath known — direct scoped add
     const browseResult = await browseLibrary(githubRepo)
-    return doSubscribe(githubRepo, browseResult)
+    return doAddWorkingCopy(githubRepo, browseResult)
 }
 
-function doSubscribe(githubRepo: string, browseResult: Awaited<ReturnType<typeof browseLibrary>>): { library: Library; syncResult: SyncResult } {
+function doAddWorkingCopy(githubRepo: string, browseResult: Awaited<ReturnType<typeof browseLibrary>>): { library: Library; syncResult: SyncResult } {
     const { manifest, manifestPath, commands, context } = browseResult
 
     const libraryId = db.addLibrary(githubRepo, manifest.name, manifest.description, manifestPath, 'github', context.permission)
@@ -670,6 +670,8 @@ function doSubscribe(githubRepo: string, browseResult: Awaited<ReturnType<typeof
     const library = db.getLibraryByRepo(githubRepo)!
     return { library, syncResult }
 }
+
+export const subscribeToLibrary = addWorkingCopyFromOrigin
 
 export async function syncLibrary(libraryId: number, force = false): Promise<SyncResult> {
     const libraries = db.getAllLibraries()

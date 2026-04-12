@@ -702,12 +702,33 @@ ipcMain.handle('auth:getStatus', async () => {
 })
 
 // ── Library IPC handlers ─────────────────────────────────────────
+
+async function handleAddWorkingCopyFromOrigin(repoUrl: string, subpath?: string) {
+  return github.addWorkingCopyFromOrigin(repoUrl, subpath)
+}
+
+ipcMain.handle('library:addWorkingCopyFromOrigin', async (_, repoUrl: string, subpath?: string) => {
+  if (typeof repoUrl !== 'string' || !repoUrl.trim()) {
+    return { success: false, error: 'Invalid repository URL' }
+  }
+  try {
+    const result = await handleAddWorkingCopyFromOrigin(repoUrl, subpath || undefined)
+    if ('needsPick' in result) {
+      return { success: false, needsPick: true, libraries: result.libraries }
+    }
+    return { success: true, library: result.library, syncResult: result.syncResult }
+  } catch (error) {
+    console.error('Library addWorkingCopyFromOrigin error:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
 ipcMain.handle('library:subscribe', async (_, repoUrl: string, subpath?: string) => {
   if (typeof repoUrl !== 'string' || !repoUrl.trim()) {
     return { success: false, error: 'Invalid repository URL' }
   }
   try {
-    const result = await github.subscribeToLibrary(repoUrl, subpath || undefined)
+    const result = await handleAddWorkingCopyFromOrigin(repoUrl, subpath || undefined)
     if ('needsPick' in result) {
       return { success: false, needsPick: true, libraries: result.libraries }
     }
@@ -908,7 +929,7 @@ ipcMain.handle('library:unpublish', async (_, libraryId: number, remotePath: str
   }
   try {
     await github.unpublishCommand(libraryId, remotePath)
-    // Remove the local remote command entry
+    // Remove the local command entry
     db.deleteRemoteCommand(libraryId, remotePath)
     return { success: true }
   } catch (error) {

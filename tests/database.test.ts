@@ -97,6 +97,22 @@ describe('deleteCommandsByIds', () => {
     })
 })
 
+describe('library contract mapping', () => {
+    it('hydrates local-first working copy metadata for local libraries', () => {
+        db.addLibrary('/tmp/test-lib', 'Test Library', 'desc', '.snipforge.json', 'local', 'owner')
+
+        const library = db.getAllLibraries()[0]
+
+        expect(library.local_path).toBe('/tmp/test-lib')
+        expect(library.origin).toBeNull()
+        expect(library.working_copy).toEqual({
+            local_path: '/tmp/test-lib',
+            manifest_path: '.snipforge.json',
+            materialized: true,
+        })
+    })
+})
+
 // ── syncRemoteCommands ──────────────────────────────────────────
 
 describe('syncRemoteCommands', () => {

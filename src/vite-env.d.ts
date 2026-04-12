@@ -55,7 +55,8 @@ interface Window {
       getStatus: () => Promise<{ authenticated: boolean; user: any }>
     }
     library: {
-      subscribe: (repoUrl: string) => Promise<{ success: boolean; library?: any; syncResult?: any; error?: string }>
+      addWorkingCopyFromOrigin: (repoUrl: string, subpath?: string) => Promise<{ success: boolean; library?: any; syncResult?: any; needsPick?: boolean; libraries?: any[]; error?: string }>
+      subscribe: (repoUrl: string, subpath?: string) => Promise<{ success: boolean; library?: any; syncResult?: any; needsPick?: boolean; libraries?: any[]; error?: string }>
       unsubscribe: (libraryId: number) => Promise<{ success: boolean; error?: string }>
       setAutoSync: (libraryId: number, enabled: boolean) => Promise<{ success: boolean; error?: string }>
       sync: (libraryId: number) => Promise<{ success: boolean; added?: number; updated?: number; removed?: number; errors?: string[]; error?: string }>

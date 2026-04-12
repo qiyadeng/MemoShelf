@@ -85,6 +85,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   // Library methods
   library: {
+    addWorkingCopyFromOrigin: (repoUrl: string, subpath?: string): Promise<{ success: boolean; library?: Library; syncResult?: SyncResult; needsPick?: boolean; libraries?: DiscoveredLibrary[]; error?: string }> =>
+      ipcRenderer.invoke('library:addWorkingCopyFromOrigin', repoUrl, subpath),
     subscribe: (repoUrl: string, subpath?: string): Promise<{ success: boolean; library?: Library; syncResult?: SyncResult; needsPick?: boolean; libraries?: DiscoveredLibrary[]; error?: string }> =>
       ipcRenderer.invoke('library:subscribe', repoUrl, subpath),
     unsubscribe: (libraryId: number): Promise<{ success: boolean; error?: string }> =>
@@ -201,6 +203,7 @@ declare global {
         getStatus: () => Promise<AuthStatus>
       },
       library: {
+        addWorkingCopyFromOrigin: (repoUrl: string, subpath?: string) => Promise<{ success: boolean; library?: Library; syncResult?: SyncResult; needsPick?: boolean; libraries?: DiscoveredLibrary[]; error?: string }>
         subscribe: (repoUrl: string, subpath?: string) => Promise<{ success: boolean; library?: Library; syncResult?: SyncResult; needsPick?: boolean; libraries?: DiscoveredLibrary[]; error?: string }>
         unsubscribe: (libraryId: number) => Promise<{ success: boolean; error?: string }>
         setAutoSync: (libraryId: number, enabled: boolean) => Promise<{ success: boolean; error?: string }>

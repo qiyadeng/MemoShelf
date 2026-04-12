@@ -1,4 +1,4 @@
-import type { RemoteCommand } from './types'
+import type { LibraryCommand } from './types'
 
 type TagsInput = string[] | string | null | undefined
 
@@ -13,7 +13,7 @@ export interface LibraryCommandInput {
   updated_at?: string | null
 }
 
-export interface LibraryCommandFileData extends RemoteCommand {
+export interface LibraryCommandFileData extends LibraryCommand {
   snipforge: 'command'
   id: string
 }
@@ -61,7 +61,7 @@ export function normalizeLibraryTags(tags: TagsInput): string[] {
   return [...new Set(normalized)]
 }
 
-export function normalizeLibraryCommand(input: LibraryCommandInput, now = new Date().toISOString()): RemoteCommand & { id?: string } {
+export function normalizeLibraryCommand(input: LibraryCommandInput, now = new Date().toISOString()): LibraryCommand & { id?: string } {
   return {
     id: normalizeCommandId(input.id) || undefined,
     title: input.title.trim(),
@@ -112,7 +112,7 @@ export function toIndexedLibraryCommandData(command: LibraryCommandInput, now = 
   }
 }
 
-export function parseLibraryCommandFile(input: unknown, now = new Date().toISOString()): (RemoteCommand & { id?: string }) | null {
+export function parseLibraryCommandFile(input: unknown, now = new Date().toISOString()): (LibraryCommand & { id?: string }) | null {
   if (!input || typeof input !== 'object') {
     return null
   }
