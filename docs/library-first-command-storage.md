@@ -4,6 +4,18 @@ Library-First Command Storage makes libraries the default way commands exist in 
 
 ## Active Notes
 
+### Issue #29: rich text library attachments
+
+Plan:
+- keep rich text command files portable by extracting embedded image data into a library-level `attachments/` folder on write
+- store relative attachment paths in command JSON, but resolve them back to local file URLs when indexing local libraries so editing/copying/rendering still works in-app
+- define cleanup around the command-owned attachment directory so updates and deletes do not leave orphaned files behind
+
+Final notes:
+- local-library writes now extract rich text `<img>` data URIs into `attachments/<command-id>/image-<hash>.<ext>` and rewrite command JSON to portable relative paths
+- local-library indexing resolves those relative image paths back to local `file://` URLs before caching commands in SQLite, which keeps the editor and clipboard path usable without storing blobs in the DB row
+- attachment cleanup is command-scoped: save removes files in that command attachment folder that are no longer referenced, and delete removes the whole command attachment folder
+
 ### Issue #25: harden sync bookkeeping for library-backed storage
 
 Plan:

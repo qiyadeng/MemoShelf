@@ -2,6 +2,7 @@ import { promises as fs, watch, type FSWatcher } from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import crypto from 'node:crypto'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import AdmZip from 'adm-zip'
 import * as db from './database'
 import * as settings from './settings'
@@ -30,6 +31,198 @@ interface CommandFormData {
     description: string
     tags: string
     language: string
+}
+
+const LIBRARY_ATTACHMENTS_DIR = 'attachments'
+const IMAGE_DATA_URI_RE = /^data:(image\/[a-z0-9.+-]+);base64,([a-z0-9+/=]+)$/i
+const IMAGE_TAG_RE = /<img\b[^>]*>/gi
+const IMAGE_SRC_ATTR_RE = /\bsrc=(['"])(.*?)\1/i
+
+function commandAttachmentsFolderPath(libraryRoot: string, commandId: string): string {
+    return path.join(libraryRoot, LIBRARY_ATTACHMENTS_DIR, commandId)
+}
+
+function toPosixPath(value: string): string {
+    return value.split(path.sep).join(path.posix.sep)
+}
+
+function normalizeRelativeAttachmentPath(src: string): string | null {
+    if (!src || /^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith('//')) {
+        return null
+    }
+
+    const stripped = src.trim().replace(/^\.?\//, '')
+    if (!stripped) {
+        return null
+    }
+
+    const normalized = path.posix.normalize(stripped)
+    if (
+        normalized === LIBRARY_ATTACHMENTS_DIR ||
+        normalized.startsWith(`${LIBRARY_ATTACHMENTS_DIR}/`)
+    ) {
+        return normalized
+    }
+
+    return null
+}
+
+function relativeAttachmentPathFromFileUrl(src: string, libraryRoot: string): string | null {
+    if (!src.startsWith('file://')) {
+        return null
+    }
+
+    try {
+        const filePath = fileURLToPath(src)
+        const relative = path.relative(libraryRoot, filePath)
+        if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+            return null
+        }
+
+        return normalizeRelativeAttachmentPath(toPosixPath(relative))
+    } catch {
+        return null
+    }
+}
+
+function parseImageDataUri(src: string): { mimeType: string; buffer: Buffer } | null {
+    const match = src.match(IMAGE_DATA_URI_RE)
+    if (!match) {
+        return null
+    }
+
+    const [, mimeType, payload] = match
+    return {
+        mimeType: mimeType.toLowerCase(),
+        buffer: Buffer.from(payload, 'base64'),
+    }
+}
+
+function getAttachmentExtension(mimeType: string): string {
+    switch (mimeType) {
+        case 'image/jpeg':
+            return 'jpg'
+        case 'image/gif':
+            return 'gif'
+        case 'image/webp':
+            return 'webp'
+        case 'image/svg+xml':
+            return 'svg'
+        default:
+            return 'png'
+    }
+}
+
+async function rewriteImageSources(
+    body: string,
+    transform: (src: string) => Promise<string> | string
+): Promise<string> {
+    let rewritten = ''
+    let lastIndex = 0
+
+    for (const match of body.matchAll(IMAGE_TAG_RE)) {
+        const tag = match[0]
+        const index = match.index ?? 0
+        const srcMatch = tag.match(IMAGE_SRC_ATTR_RE)
+
+        rewritten += body.slice(lastIndex, index)
+
+        if (!srcMatch) {
+            rewritten += tag
+            lastIndex = index + tag.length
+            continue
+        }
+
+        const [, quote, src] = srcMatch
+        const nextSrc = await transform(src)
+        rewritten += tag.replace(`${quote}${src}${quote}`, `${quote}${nextSrc}${quote}`)
+        lastIndex = index + tag.length
+    }
+
+    rewritten += body.slice(lastIndex)
+    return rewritten
+}
+
+async function cleanupCommandAttachments(
+    libraryRoot: string,
+    commandId: string,
+    referencedPaths: Set<string>
+): Promise<void> {
+    const attachmentsDir = commandAttachmentsFolderPath(libraryRoot, commandId)
+
+    try {
+        const entries = await fs.readdir(attachmentsDir, { withFileTypes: true })
+        for (const entry of entries) {
+            if (!entry.isFile()) {
+                continue
+            }
+
+            const relativePath = path.posix.join(LIBRARY_ATTACHMENTS_DIR, commandId, entry.name)
+            if (!referencedPaths.has(relativePath)) {
+                await fs.rm(path.join(attachmentsDir, entry.name), { force: true })
+            }
+        }
+
+        const remaining = await fs.readdir(attachmentsDir)
+        if (remaining.length === 0) {
+            await fs.rm(attachmentsDir, { recursive: true, force: true })
+        }
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+            throw error
+        }
+    }
+}
+
+async function normalizeRichTextBodyForLibraryWrite(
+    body: string,
+    libraryRoot: string,
+    commandId: string
+): Promise<string> {
+    const referencedPaths = new Set<string>()
+    const attachmentsDir = commandAttachmentsFolderPath(libraryRoot, commandId)
+
+    const rewritten = await rewriteImageSources(body, async (src) => {
+        const relativeExisting = normalizeRelativeAttachmentPath(src) || relativeAttachmentPathFromFileUrl(src, libraryRoot)
+        if (relativeExisting) {
+            referencedPaths.add(relativeExisting)
+            return relativeExisting
+        }
+
+        const imageData = parseImageDataUri(src)
+        if (!imageData) {
+            return src
+        }
+
+        await fs.mkdir(attachmentsDir, { recursive: true })
+        const hash = crypto.createHash('sha256').update(imageData.buffer).digest('hex').slice(0, 16)
+        const fileName = `image-${hash}.${getAttachmentExtension(imageData.mimeType)}`
+        const relativePath = path.posix.join(LIBRARY_ATTACHMENTS_DIR, commandId, fileName)
+        await fs.writeFile(path.join(libraryRoot, relativePath), imageData.buffer)
+        referencedPaths.add(relativePath)
+        return relativePath
+    })
+
+    await cleanupCommandAttachments(libraryRoot, commandId, referencedPaths)
+    return rewritten
+}
+
+function resolveRichTextAttachmentUrls(body: string, libraryRoot: string): string {
+    return body.replace(IMAGE_TAG_RE, (tag) => {
+        const srcMatch = tag.match(IMAGE_SRC_ATTR_RE)
+        if (!srcMatch) {
+            return tag
+        }
+
+        const [, quote, src] = srcMatch
+        const relativePath = normalizeRelativeAttachmentPath(src)
+        if (!relativePath) {
+            return tag
+        }
+
+        const fileUrl = pathToFileURL(path.join(libraryRoot, relativePath)).href
+        return tag.replace(`${quote}${src}${quote}`, `${quote}${fileUrl}${quote}`)
+    })
 }
 
 function deriveLibraryName(folderPath: string): string {
@@ -79,9 +272,15 @@ async function writeCommandFile(
     id: string,
     updatedAt?: string
 ): Promise<void> {
+    const normalizedBody = command.language === 'richtext'
+        ? await normalizeRichTextBodyForLibraryWrite(command.body, folderPath, id)
+        : command.body
+    if (command.language !== 'richtext') {
+        await cleanupCommandAttachments(folderPath, id, new Set())
+    }
     const fileData = buildLibraryCommandFileData({
         title: command.title,
-        body: command.body,
+        body: normalizedBody,
         description: command.description,
         tags: command.tags,
         language: command.language,
@@ -124,6 +323,22 @@ async function resolveUpdatedCommandFileName(
     nextTitle: string
 ): Promise<string> {
     return findUniqueCommandFileName(folderPath, nextTitle, { excludeFileName: currentFileName })
+}
+
+async function readLibraryCommandFileMetadata(filePath: string): Promise<{ id: string | null; created_at?: string } | null> {
+    try {
+        const parsed = JSON.parse(await fs.readFile(filePath, 'utf8')) as {
+            id?: string
+            created_at?: string
+        }
+
+        return {
+            id: normalizeCommandId(parsed.id),
+            created_at: parsed.created_at,
+        }
+    } catch {
+        return null
+    }
 }
 
 function resolveFileBackedLocalCommand(commandId: number): { command: db.Command; library: Library } | null {
@@ -213,12 +428,27 @@ async function createManifestIfMissing(folderPath: string): Promise<ScanResult> 
     return await scanLocalFolder(folderPath)
 }
 
-function buildLocalSyncPayload(commands: ScanResult['commands'], existingBodies: Set<string>) {
+function toIndexedLocalLibraryCommandData(command: CommandFormData | RemoteCommand, libraryRoot: string) {
+    if (command.language !== 'richtext') {
+        return toIndexedLibraryCommandData(command)
+    }
+
+    return toIndexedLibraryCommandData({
+        ...command,
+        body: resolveRichTextAttachmentUrls(command.body, libraryRoot),
+    })
+}
+
+function buildLocalSyncPayload(
+    commands: ScanResult['commands'],
+    existingBodies: Set<string>,
+    libraryRoot: string
+) {
     return commands
         .filter(({ command }) => !existingBodies.has(command.body.trim()))
         .map(({ path: filePath, command }) => ({
             remotePath: filePath,
-            command: toIndexedLibraryCommandData(command),
+            command: toIndexedLocalLibraryCommandData(command, libraryRoot),
         }))
 }
 
@@ -262,7 +492,7 @@ function addLibraryFromScan(
     }
 
     const localBodies = db.getLocalCommandBodies()
-    const toAdd = buildLocalSyncPayload(commands, localBodies)
+    const toAdd = buildLocalSyncPayload(commands, localBodies, folderPath)
     const syncResult = db.syncRemoteCommands(
         libraryId,
         computeContentHash(commands),
@@ -395,10 +625,7 @@ export async function updateLocalLibraryCommand(commandId: number, updates: Comm
     const currentFileName = target.command.remote_path
     const nextFileName = await resolveUpdatedCommandFileName(target.library.github_repo, currentFileName, updates.title)
     const filePath = path.join(target.library.github_repo, currentFileName)
-    const existing = await fs.readFile(filePath, 'utf8').then(content => JSON.parse(content) as {
-        id?: string
-        created_at?: string
-    }).catch(() => null)
+    const existing = await readLibraryCommandFileMetadata(filePath)
 
     if (!existing) {
         throw new Error('Command file not found')
@@ -413,12 +640,12 @@ export async function updateLocalLibraryCommand(commandId: number, updates: Comm
         nextFileName,
         updates,
         existing.created_at || target.command.created_at,
-        normalizeCommandId(existing.id) || createCommandId()
+        existing.id || createCommandId()
     )
 
     const updatedFile = await fs.readFile(path.join(target.library.github_repo, nextFileName), 'utf8')
-        .then(content => JSON.parse(content))
-    const indexed = toIndexedLibraryCommandData(updatedFile)
+        .then(content => JSON.parse(content) as RemoteCommand)
+    const indexed = toIndexedLocalLibraryCommandData(updatedFile, target.library.github_repo)
     const updated = db.updateRemoteCommandById(commandId, {
         remote_path: nextFileName,
         title: indexed.title,
@@ -447,7 +674,11 @@ export async function deleteLocalLibraryCommand(commandId: number): Promise<Comm
     }
 
     const filePath = path.join(target.library.github_repo, target.command.remote_path)
+    const existing = await readLibraryCommandFileMetadata(filePath)
     await fs.rm(filePath, { force: true })
+    if (existing?.id) {
+        await cleanupCommandAttachments(target.library.github_repo, existing.id, new Set())
+    }
     const syncResult = await syncLocalLibrary(target.library.id, true)
     const updatedLibrary = db.getAllLibraries().find(l => l.id === target.library.id) || target.library
     return { success: true, mode: 'library', library: updatedLibrary, syncResult }
@@ -489,7 +720,11 @@ export async function deleteLocalLibraryCommands(commandIds: number[]): Promise<
     for (const [libraryId, filePaths] of fileDeletesByLibrary.entries()) {
         for (const filePath of filePaths) {
             try {
+                const existing = await readLibraryCommandFileMetadata(filePath)
                 await fs.rm(filePath, { force: true })
+                if (existing?.id) {
+                    await cleanupCommandAttachments(path.dirname(filePath), existing.id, new Set())
+                }
                 succeeded += 1
             } catch (error) {
                 errors.push(`Failed to delete "${path.basename(filePath)}": ${(error as Error).message}`)
@@ -636,12 +871,12 @@ export async function syncLocalLibrary(libraryId: number, force = false): Promis
         const local = localByPath.get(filePath)
         if (!local) {
             if (localBodies.has(command.body.trim())) continue
-            toAdd.push({ remotePath: filePath, command: toIndexedLibraryCommandData(command) })
+            toAdd.push({ remotePath: filePath, command: toIndexedLocalLibraryCommandData(command, folderPath) })
         } else {
             const remoteUpdated = command.updated_at || ''
             const localUpdated = local.updated_at || ''
             if (remoteUpdated > localUpdated) {
-                const indexed = toIndexedLibraryCommandData(command)
+                const indexed = toIndexedLocalLibraryCommandData(command, folderPath)
                 toUpdate.push({
                     remotePath: filePath,
                     command: {

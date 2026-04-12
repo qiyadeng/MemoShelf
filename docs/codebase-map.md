@@ -144,6 +144,18 @@ Final notes:
 - `App.vue` uses that shared path for both filtered export and bulk export, removing the bulk-only filename divergence.
 - Regression coverage verifies the shared filename/content path that bulk export now relies on.
 
+### Issue #29: rich text library attachments
+
+Plan:
+- Extract rich text image payloads into library attachments on write instead of leaving them inline in command JSON.
+- Resolve attachment paths back to local file URLs when local libraries are indexed so the renderer can still edit and copy those commands.
+- Remove stale per-command attachments during saves and deletes.
+
+Final notes:
+- `electron/main/local-library.ts` now rewrites rich text image data URIs to `attachments/<command-id>/...` paths when writing local-library command files.
+- Local-library indexing resolves those relative image paths back to `file://` URLs before caching command HTML in SQLite for the renderer.
+- Attachment cleanup is command-scoped, so saves and deletes do not leave orphaned local-library image files behind.
+
 ### Issue #34: batch IPC for import and bulk delete
 
 Plan:

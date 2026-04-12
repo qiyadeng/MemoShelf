@@ -371,6 +371,9 @@ const getCommandPreview = (body: string, language: string): string => {
 // LRU cache for rendered content (markdown/HTML) - max 100 entries
 const renderedContentCache = new Map<string, { html: string, plain: string }>()
 const MAX_CACHE_SIZE = 100
+const RICH_TEXT_SANITIZE_CONFIG = {
+  ALLOWED_URI_REGEXP: /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|matrix|file):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i
+}
 
 // Actual clipboard copy function with HTML generation
 const copyToClipboard = async (text: string, language: string = 'plaintext') => {
@@ -389,7 +392,7 @@ const copyToClipboard = async (text: string, language: string = 'plaintext') => 
         if (language === 'richtext') {
           // Rich text is already HTML from TipTap (TipTap sanitizes by default)
           // Sanitize for extra safety when copying to clipboard
-          html = DOMPurify.sanitize(text)
+          html = DOMPurify.sanitize(text, RICH_TEXT_SANITIZE_CONFIG)
           // Extract plain text from HTML for plain text clipboard
           plainText = stripHtml(html)
         } else if (language === 'markdown') {

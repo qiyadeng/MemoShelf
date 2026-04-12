@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import path from 'node:path'
 import os from 'node:os'
 import { promises as fs } from 'node:fs'
+import { pathToFileURL } from 'node:url'
 import * as db from '../electron/main/database'
 import * as settings from '../electron/main/settings'
 import {
@@ -19,6 +20,7 @@ import {
 } from '../electron/main/local-library'
 
 let tmpDir: string
+const TINY_PNG_DATA_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2pKxQAAAAASUVORK5CYII='
 
 beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'snipforge-test-lib-'))
@@ -325,6 +327,79 @@ describe('local library CRUD', () => {
         expect(deleteResult.success).toBe(true)
         expect(deleteResult.mode).toBe('library')
         await expect(fs.access(path.join(tmpDir, renamedPath))).rejects.toThrow()
+        expect(db.getRemoteCommands(setup.library.id)).toHaveLength(0)
+    })
+
+    it('extracts rich text images into library attachments and indexes them back as local file URLs', async () => {
+        const setup = await setupDefaultWritableLocalLibrary(tmpDir)
+        const richBody = `<p>Checklist</p><img src="${TINY_PNG_DATA_URI}" alt="tiny">`
+
+        const createResult = await createLocalLibraryCommand({
+            title: 'Rich Text With Image',
+            body: richBody,
+            description: 'portable rich text',
+            tags: '["richtext"]',
+            language: 'richtext',
+        })
+
+        expect(createResult.success).toBe(true)
+
+        const [indexedCommand] = db.getRemoteCommands(setup.library.id)
+        const commandPath = indexedCommand.remote_path as string
+        const savedFile = JSON.parse(await fs.readFile(path.join(tmpDir, commandPath), 'utf8'))
+
+        expect(savedFile.body).not.toContain('data:image')
+        const savedSrcMatch = savedFile.body.match(/src="([^"]+)"/)
+        expect(savedSrcMatch?.[1]).toMatch(/^attachments\/[0-9a-f-]{36}\/image-[0-9a-f]{16}\.png$/)
+
+        const attachmentPath = path.join(tmpDir, savedSrcMatch![1])
+        await expect(fs.access(attachmentPath)).resolves.toBeUndefined()
+        expect(indexedCommand.body).toContain(pathToFileURL(attachmentPath).href)
+
+        await updateLocalLibraryCommand(indexedCommand.id, {
+            title: 'Rich Text With Image',
+            body: indexedCommand.body.replace('Checklist', 'Updated Checklist'),
+            description: 'portable rich text',
+            tags: '["richtext"]',
+            language: 'richtext',
+        })
+
+        const [updatedCommand] = db.getRemoteCommands(setup.library.id)
+        const updatedFile = JSON.parse(await fs.readFile(path.join(tmpDir, updatedCommand.remote_path as string), 'utf8'))
+        expect(updatedFile.body).toContain(savedSrcMatch![1])
+        expect(updatedFile.body).not.toContain('file://')
+        expect(updatedCommand.body).toContain(pathToFileURL(attachmentPath).href)
+    })
+
+    it('cleans orphaned rich text attachments on update and delete', async () => {
+        const setup = await setupDefaultWritableLocalLibrary(tmpDir)
+
+        await createLocalLibraryCommand({
+            title: 'Rich Text Cleanup',
+            body: `<p>Before</p><img src="${TINY_PNG_DATA_URI}" alt="tiny">`,
+            description: 'cleanup',
+            tags: '["richtext"]',
+            language: 'richtext',
+        })
+
+        const [createdCommand] = db.getRemoteCommands(setup.library.id)
+        const commandPath = path.join(tmpDir, createdCommand.remote_path as string)
+        const createdFile = JSON.parse(await fs.readFile(commandPath, 'utf8'))
+        const initialAttachment = path.join(tmpDir, createdFile.body.match(/src="([^"]+)"/)?.[1] as string)
+        const attachmentDir = path.dirname(initialAttachment)
+
+        await updateLocalLibraryCommand(createdCommand.id, {
+            title: 'Rich Text Cleanup',
+            body: '<p>After</p>',
+            description: 'cleanup',
+            tags: '["richtext"]',
+            language: 'richtext',
+        })
+
+        await expect(fs.access(initialAttachment)).rejects.toThrow()
+        await expect(fs.access(attachmentDir)).rejects.toThrow()
+
+        await deleteLocalLibraryCommand(createdCommand.id)
         expect(db.getRemoteCommands(setup.library.id)).toHaveLength(0)
     })
 
