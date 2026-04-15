@@ -424,18 +424,6 @@
                     >
                       Manage
                     </button>
-                    <button
-                      @click="handleSyncLibrary(lib.id)"
-                      class="library-action-btn"
-                      :disabled="syncing"
-                      title="Sync"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="23 4 23 10 17 10"></polyline>
-                        <polyline points="1 20 1 14 7 14"></polyline>
-                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-                      </svg>
-                    </button>
                   </template>
                   <button
                     @click="handleRemoveLibrary(lib)"
@@ -474,6 +462,90 @@
                   <p class="library-management-note">
                     {{ managementContextNote }}
                   </p>
+                </div>
+              </div>
+
+              <div class="library-changes-panel">
+                <div class="library-changes-header">
+                  <div class="library-changes-copy">
+                    <h5>Changes</h5>
+                    <p class="library-changes-note">
+                      {{ managedLibraryChangesSummary.headline }}. {{ managedLibraryChangesSummary.detail }}
+                    </p>
+                  </div>
+                  <div class="library-changes-actions">
+                    <button
+                      class="library-action-btn subtle"
+                      @click="handleRefreshManagedLibrary"
+                      :disabled="syncing"
+                      title="Refresh working tree status"
+                    >
+                      Refresh
+                    </button>
+                    <button
+                      v-if="managedLibraryChangesSummary.canSync"
+                      @click="handleSyncLibrary(managedLibrary.id)"
+                      class="library-action-btn subtle"
+                      :disabled="syncing"
+                      :title="managedLibraryChangesSummary.syncTitle"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="23 4 23 10 17 10"></polyline>
+                        <polyline points="1 20 1 14 7 14"></polyline>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                      </svg>
+                      {{ syncing ? 'Syncing...' : 'Sync' }}
+                    </button>
+                  </div>
+                </div>
+
+                <div class="library-changes-grid">
+                  <div class="library-change-card">
+                    <span class="library-change-label">Origin</span>
+                    <span class="library-change-value">
+                      {{ managedLibrary.origin ? 'GitHub' : 'Local only' }}
+                    </span>
+                    <span class="library-change-meta">
+                      {{ managedLibrary.origin ? managedLibrary.origin.url : 'No remote origin configured for this library.' }}
+                    </span>
+                    <span v-if="managedLibrary.origin?.ref" class="library-change-meta">
+                      Ref: {{ managedLibrary.origin.ref }}
+                    </span>
+                  </div>
+
+                  <div class="library-change-card">
+                    <span class="library-change-label">Working tree</span>
+                    <span class="library-change-value" :class="`library-change-value--${managedLibraryChangesSummary.tone}`">
+                      {{ managedLibraryWorkingTreeLabel }}
+                    </span>
+                    <span class="library-change-meta">
+                      {{ managedLibraryChangesSummary.detail }}
+                    </span>
+                    <span v-if="managedLibrary.working_tree.checked_at" class="library-change-meta">
+                      Checked {{ formatSyncTime(managedLibrary.working_tree.checked_at) }}
+                    </span>
+                  </div>
+
+                  <div
+                    v-if="managedLibrary.working_tree.state === 'dirty' || managedLibrary.working_tree.state === 'clean'"
+                    class="library-change-card library-change-card--counts"
+                  >
+                    <span class="library-change-label">File summary</span>
+                    <div class="library-change-counts">
+                      <span class="library-change-count">
+                        <strong>{{ managedLibrary.working_tree.modified }}</strong>
+                        modified
+                      </span>
+                      <span class="library-change-count">
+                        <strong>{{ managedLibrary.working_tree.added }}</strong>
+                        new
+                      </span>
+                      <span class="library-change-count">
+                        <strong>{{ managedLibrary.working_tree.deleted }}</strong>
+                        deleted
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -722,6 +794,7 @@
 import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import { filterCommandsByTags, getAllTags, matchesTagFilter } from '../utils/tags'
 import { getInlineSuggestion } from '../utils/autocomplete'
+import { describeLibraryChanges } from '../utils/library-changes'
 import { useSettings } from '../composables/useSettings'
 import CommandList from './CommandList.vue'
 import TagSelector from './TagSelector.vue'
@@ -1095,6 +1168,37 @@ const managementContextNote = computed(() => {
   }
   return 'This subscribed library is managed in context here. Export stays available, but destructive local delete is hidden.'
 })
+const managedLibraryChangesSummary = computed(() => {
+  if (!managedLibrary.value) {
+    return {
+      headline: '',
+      detail: '',
+      tone: 'neutral' as const,
+      canSync: false,
+      syncTitle: '',
+    }
+  }
+
+  return describeLibraryChanges(managedLibrary.value)
+})
+const managedLibraryWorkingTreeLabel = computed(() => {
+  if (!managedLibrary.value) return ''
+
+  switch (managedLibrary.value.working_tree.state) {
+    case 'dirty':
+      return 'Dirty'
+    case 'clean':
+      return 'Clean'
+    case 'not_repo':
+      return 'Not a git repo'
+    case 'git_unavailable':
+      return 'Git unavailable'
+    case 'no_working_copy':
+      return 'No working copy'
+    case 'error':
+      return 'Status error'
+  }
+})
 
 // ── Library Picker State ──────────────────────────────────────
 const libraryPicker = ref({
@@ -1177,6 +1281,15 @@ function closeLibraryManagement() {
   selectedManagementTags.value = []
   showManagementFilterDropdown.value = false
   showExportDropdown.value = false
+}
+
+async function handleRefreshManagedLibrary() {
+  libraryError.value = ''
+  try {
+    await loadLibraries()
+  } catch (e) {
+    libraryError.value = (e as Error).message
+  }
 }
 
 function getLibraryCommandCount(libraryId: number): number {
@@ -3675,6 +3788,13 @@ watch(managedLibrary, (library) => {
   font-weight: 600;
 }
 
+.library-action-btn.subtle {
+  width: auto;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
 .library-action-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -3760,6 +3880,116 @@ watch(managedLibrary, (library) => {
   margin: 0;
   color: var(--text-tertiary);
   font-size: 13px;
+}
+
+.library-changes-panel {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-input);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.library-changes-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.library-changes-copy h5 {
+  margin: 0 0 4px 0;
+  font-size: 15px;
+  color: var(--text-primary);
+}
+
+.library-changes-note {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.library-changes-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.library-changes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.library-change-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-surface) 82%, transparent);
+  min-width: 0;
+}
+
+.library-change-card--counts {
+  justify-content: space-between;
+}
+
+.library-change-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.library-change-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.library-change-value--success {
+  color: #66bb6a;
+}
+
+.library-change-value--warning {
+  color: #f5b64b;
+}
+
+.library-change-value--danger {
+  color: #ef5350;
+}
+
+.library-change-meta {
+  font-size: 12px;
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+
+.library-change-counts {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.library-change-count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 6px 8px;
+  border-radius: 999px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.library-change-count strong {
+  color: var(--text-primary);
 }
 
 .sync-message {
