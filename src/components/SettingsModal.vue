@@ -547,6 +547,99 @@
                     </div>
                   </div>
                 </div>
+
+                <div v-if="managedLibrary.origin" class="library-origin-panel">
+                  <div class="library-origin-header">
+                    <div class="library-changes-copy">
+                      <h5>Origin workflow</h5>
+                      <p v-if="managedLibraryWorkflowSummary" class="library-changes-note">
+                        {{ managedLibraryWorkflowSummary.headline }}. {{ managedLibraryWorkflowSummary.detail }}
+                      </p>
+                      <p v-else-if="managedLibraryWorkflowError" class="library-changes-note library-changes-note--danger">
+                        {{ managedLibraryWorkflowError }}
+                      </p>
+                      <p v-else class="library-changes-note">
+                        Checking git-backed workflow support for this library.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div class="library-changes-grid">
+                    <div class="library-change-card">
+                      <span class="library-change-label">Remote</span>
+                      <span class="library-change-value">
+                        {{ managedLibraryWorkflowSummary?.remote_name || 'Unavailable' }}
+                      </span>
+                      <span class="library-change-meta">
+                        {{ managedLibrary.origin.url }}
+                      </span>
+                    </div>
+
+                    <div class="library-change-card">
+                      <span class="library-change-label">Branch</span>
+                      <span class="library-change-value">
+                        {{ managedLibraryWorkflowSummary?.current_branch || 'Detached / unknown' }}
+                      </span>
+                      <span class="library-change-meta">
+                        Base: {{ managedLibraryWorkflowSummary?.default_branch || 'Unknown' }}
+                      </span>
+                      <span class="library-change-meta">
+                        {{ managedLibraryWorkflowSummary?.has_upstream ? 'Tracks an upstream branch.' : 'No upstream branch configured.' }}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div class="library-origin-actions">
+                    <button
+                      class="library-action-btn subtle"
+                      :disabled="!!managedWorkflowBusy || !workflowActionState.fetch.available"
+                      :title="workflowActionState.fetch.reason || 'Fetch origin refs'"
+                      @click="handleFetchOrigin"
+                    >
+                      {{ managedWorkflowBusy === 'fetch' ? 'Fetching...' : 'Fetch' }}
+                    </button>
+                    <button
+                      class="library-action-btn subtle"
+                      :disabled="!!managedWorkflowBusy || !workflowActionState.update.available"
+                      :title="workflowActionState.update.reason || 'Fast-forward this working copy from origin'"
+                      @click="handleUpdateFromOrigin"
+                    >
+                      {{ managedWorkflowBusy === 'update' ? 'Updating...' : 'Update' }}
+                    </button>
+                    <button
+                      class="library-action-btn subtle"
+                      :disabled="!!managedWorkflowBusy || !workflowActionState.commit.available"
+                      :title="workflowActionState.commit.reason || 'Commit local changes in this library'"
+                      @click="handleCommitLibraryChanges"
+                    >
+                      {{ managedWorkflowBusy === 'commit' ? 'Committing...' : 'Commit' }}
+                    </button>
+                    <button
+                      class="library-action-btn subtle"
+                      :disabled="!!managedWorkflowBusy || !workflowActionState.push.available"
+                      :title="workflowActionState.push.reason || 'Push the current branch to origin'"
+                      @click="handlePushLibraryChanges"
+                    >
+                      {{ managedWorkflowBusy === 'push' ? 'Pushing...' : 'Push' }}
+                    </button>
+                    <button
+                      class="library-action-btn subtle"
+                      :disabled="!!managedWorkflowBusy || !workflowActionState.pull_request.available"
+                      :title="workflowActionState.pull_request.reason || 'Open a pull request from this branch'"
+                      @click="handleOpenLibraryPullRequest"
+                    >
+                      {{ managedWorkflowBusy === 'pull_request' ? 'Opening...' : 'Pull Request' }}
+                    </button>
+                  </div>
+
+                  <p
+                    v-if="managedWorkflowActionNote"
+                    class="library-origin-note"
+                    :class="{ 'library-origin-note--warning': !!managedWorkflowSummaryReason }"
+                  >
+                    {{ managedWorkflowActionNote }}
+                  </p>
+                </div>
               </div>
 
               <div class="management-controls">
@@ -798,7 +891,13 @@ import { describeLibraryChanges } from '../utils/library-changes'
 import { useSettings } from '../composables/useSettings'
 import CommandList from './CommandList.vue'
 import TagSelector from './TagSelector.vue'
-import type { Library, AuthStatus, UpdateStatus, DiscoveredLibrary } from '../../shared/types'
+import type {
+  Library,
+  AuthStatus,
+  UpdateStatus,
+  DiscoveredLibrary,
+  LibraryGitWorkflowSummary,
+} from '../../shared/types'
 
 // Props
 interface Props {
@@ -1181,6 +1280,29 @@ const managedLibraryChangesSummary = computed(() => {
 
   return describeLibraryChanges(managedLibrary.value)
 })
+const managedLibraryWorkflowSummary = ref<LibraryGitWorkflowSummary | null>(null)
+const managedLibraryWorkflowError = ref('')
+const managedWorkflowBusy = ref<null | 'fetch' | 'update' | 'commit' | 'push' | 'pull_request'>(null)
+const workflowActionState = computed(() => managedLibraryWorkflowSummary.value?.actions || {
+  fetch: { available: false, reason: null },
+  update: { available: false, reason: null },
+  commit: { available: false, reason: null },
+  push: { available: false, reason: null },
+  pull_request: { available: false, reason: null },
+})
+const managedWorkflowSummaryReason = computed(() => {
+  return workflowActionState.value.pull_request.reason
+    || workflowActionState.value.push.reason
+    || workflowActionState.value.update.reason
+    || workflowActionState.value.commit.reason
+    || workflowActionState.value.fetch.reason
+    || ''
+})
+const managedWorkflowActionNote = computed(() => {
+  if (managedLibraryWorkflowError.value) return managedLibraryWorkflowError.value
+  if (!managedLibraryWorkflowSummary.value) return ''
+  return managedWorkflowSummaryReason.value || ''
+})
 const managedLibraryWorkingTreeLabel = computed(() => {
   if (!managedLibrary.value) return ''
 
@@ -1267,12 +1389,30 @@ async function handleChooseDefaultWritableLibrary() {
   }
 }
 
+async function loadManagedLibraryWorkflow(libraryId: number) {
+  managedLibraryWorkflowError.value = ''
+  managedLibraryWorkflowSummary.value = null
+
+  try {
+    const result = await window.electronAPI.library.getWorkflowSummary(libraryId)
+    if (result.success && result.summary) {
+      managedLibraryWorkflowSummary.value = result.summary
+      return
+    }
+
+    managedLibraryWorkflowError.value = result.error || 'Unable to inspect library workflow state.'
+  } catch (e) {
+    managedLibraryWorkflowError.value = (e as Error).message
+  }
+}
+
 function openLibraryManagement(libraryId: number) {
   selectedLibraryId.value = libraryId
   selectedCommandIds.value = []
   selectedManagementTags.value = []
   showManagementFilterDropdown.value = false
   showExportDropdown.value = false
+  loadManagedLibraryWorkflow(libraryId)
 }
 
 function closeLibraryManagement() {
@@ -1281,12 +1421,18 @@ function closeLibraryManagement() {
   selectedManagementTags.value = []
   showManagementFilterDropdown.value = false
   showExportDropdown.value = false
+  managedLibraryWorkflowSummary.value = null
+  managedLibraryWorkflowError.value = ''
+  managedWorkflowBusy.value = null
 }
 
 async function handleRefreshManagedLibrary() {
   libraryError.value = ''
   try {
     await loadLibraries()
+    if (managedLibrary.value) {
+      await loadManagedLibraryWorkflow(managedLibrary.value.id)
+    }
   } catch (e) {
     libraryError.value = (e as Error).message
   }
@@ -1294,6 +1440,81 @@ async function handleRefreshManagedLibrary() {
 
 function getLibraryCommandCount(libraryId: number): number {
   return libraryCommandCounts.value.get(libraryId) || 0
+}
+
+async function runManagedLibraryWorkflow(
+  action: 'fetch' | 'update' | 'commit' | 'push' | 'pull_request',
+  task: () => Promise<{ success: boolean; blocked?: boolean; message?: string; detail?: string; error?: string; url?: string; syncResult?: { added: number; updated: number; removed: number; errors: string[] } }>
+) {
+  if (!managedLibrary.value || managedWorkflowBusy.value) return
+
+  managedWorkflowBusy.value = action
+  libraryError.value = ''
+  syncMessage.value = ''
+
+  try {
+    const result = await task()
+
+    if (!result.success) {
+      libraryError.value = result.error || 'Library workflow failed.'
+      return
+    }
+
+    if (result.url) {
+      await window.electronAPI.shell.openExternal(result.url)
+    }
+
+    await loadLibraries()
+    await loadManagedLibraryWorkflow(managedLibrary.value.id)
+
+    if (result.syncResult) {
+      emit('libraries-changed')
+    }
+
+    syncMessage.value = result.message || 'Library workflow completed.'
+    syncMessageType.value = 'success'
+    clearSyncMessage()
+  } catch (e) {
+    libraryError.value = (e as Error).message
+  } finally {
+    managedWorkflowBusy.value = null
+  }
+}
+
+async function handleFetchOrigin() {
+  if (!managedLibrary.value) return
+  await runManagedLibraryWorkflow('fetch', () => window.electronAPI.library.fetchOrigin(managedLibrary.value!.id))
+}
+
+async function handleUpdateFromOrigin() {
+  if (!managedLibrary.value) return
+  await runManagedLibraryWorkflow('update', () => window.electronAPI.library.updateFromOrigin(managedLibrary.value!.id))
+}
+
+async function handleCommitLibraryChanges() {
+  if (!managedLibrary.value) return
+
+  const prompt = await window.electronAPI.dialog.showInputDialog(
+    'Commit Library Changes',
+    'Commit message',
+    `Update ${managedLibrary.value.name}`
+  )
+
+  if (!prompt.success || !prompt.value?.trim()) {
+    return
+  }
+
+  await runManagedLibraryWorkflow('commit', () => window.electronAPI.library.commitChanges(managedLibrary.value!.id, prompt.value!))
+}
+
+async function handlePushLibraryChanges() {
+  if (!managedLibrary.value) return
+  await runManagedLibraryWorkflow('push', () => window.electronAPI.library.pushChanges(managedLibrary.value!.id))
+}
+
+async function handleOpenLibraryPullRequest() {
+  if (!managedLibrary.value) return
+  await runManagedLibraryWorkflow('pull_request', () => window.electronAPI.library.openPullRequest(managedLibrary.value!.id))
 }
 
 // ── Auto-Sync State ───────────────────────────────────────────
@@ -1596,6 +1817,8 @@ async function loadLibraries() {
     libraries.value = await (window.electronAPI as any).library.getAll()
     if (selectedLibraryId.value !== null && !libraries.value.some(lib => lib.id === selectedLibraryId.value && !!lib.manifest_path)) {
       closeLibraryManagement()
+    } else if (selectedLibraryId.value !== null) {
+      await loadManagedLibraryWorkflow(selectedLibraryId.value)
     }
   } catch {
     libraries.value = []
@@ -3911,6 +4134,10 @@ watch(managedLibrary, (library) => {
   font-size: 13px;
 }
 
+.library-changes-note--danger {
+  color: #ef5350;
+}
+
 .library-changes-actions {
   display: flex;
   gap: 8px;
@@ -3990,6 +4217,37 @@ watch(managedLibrary, (library) => {
 
 .library-change-count strong {
   color: var(--text-primary);
+}
+
+.library-origin-panel {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.library-origin-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.library-origin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.library-origin-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.library-origin-note--warning {
+  color: #f5b64b;
 }
 
 .sync-message {

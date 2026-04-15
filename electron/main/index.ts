@@ -824,6 +824,89 @@ ipcMain.handle('library:getAll', async () => {
   }
 })
 
+ipcMain.handle('library:getWorkflowSummary', async (_, libraryId: number) => {
+  if (typeof libraryId !== 'number') {
+    return { success: false, error: 'Invalid library ID' }
+  }
+
+  try {
+    const summary = await localLibrary.getLibraryGitWorkflowSummary(libraryId)
+    return { success: true, summary }
+  } catch (error) {
+    console.error('Library workflow summary error:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+ipcMain.handle('library:fetchOrigin', async (_, libraryId: number) => {
+  if (typeof libraryId !== 'number') {
+    return { success: false, error: 'Invalid library ID' }
+  }
+
+  try {
+    return await localLibrary.fetchLibraryOrigin(libraryId)
+  } catch (error) {
+    console.error('Library fetch origin error:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+ipcMain.handle('library:updateFromOrigin', async (_, libraryId: number) => {
+  if (typeof libraryId !== 'number') {
+    return { success: false, error: 'Invalid library ID' }
+  }
+
+  try {
+    const result = await localLibrary.updateLibraryOrigin(libraryId)
+    if (result.success && result.syncResult) {
+      win?.webContents.send('commands:changed')
+    }
+    return result
+  } catch (error) {
+    console.error('Library update origin error:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+ipcMain.handle('library:commitChanges', async (_, libraryId: number, message: string) => {
+  if (typeof libraryId !== 'number' || typeof message !== 'string') {
+    return { success: false, error: 'Invalid parameters' }
+  }
+
+  try {
+    return await localLibrary.commitLibraryChanges(libraryId, message)
+  } catch (error) {
+    console.error('Library commit error:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+ipcMain.handle('library:pushChanges', async (_, libraryId: number) => {
+  if (typeof libraryId !== 'number') {
+    return { success: false, error: 'Invalid library ID' }
+  }
+
+  try {
+    return await localLibrary.pushLibraryChanges(libraryId)
+  } catch (error) {
+    console.error('Library push error:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+ipcMain.handle('library:openPullRequest', async (_, libraryId: number) => {
+  if (typeof libraryId !== 'number') {
+    return { success: false, error: 'Invalid library ID' }
+  }
+
+  try {
+    return await localLibrary.openLibraryPullRequest(libraryId)
+  } catch (error) {
+    console.error('Library pull request error:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
 ipcMain.handle('library:init', async (_, libraryId: number, name: string, description: string, subpath?: string) => {
   if (typeof libraryId !== 'number' || typeof name !== 'string' || !name.trim()) {
     return { success: false, error: 'Invalid parameters' }
@@ -855,33 +938,6 @@ ipcMain.handle('library:getRepoFolders', async (_, repoUrl: string) => {
   } catch (error) {
     console.error('Library getRepoFolders error:', error)
     return { success: false, error: (error as Error).message, folders: [] }
-  }
-})
-
-ipcMain.handle('library:publish', async (_, libraryId: number, commandId: number) => {
-  if (typeof libraryId !== 'number' || typeof commandId !== 'number') {
-    return { success: false, error: 'Invalid parameters' }
-  }
-  try {
-    // Fetch the command from DB
-    const commands = db.getAllCommands()
-    const command = commands.find(c => c.id === commandId)
-    if (!command) {
-      return { success: false, error: 'Command not found' }
-    }
-
-    const tags = JSON.parse(command.tags || '[]')
-    const { path, created } = await github.publishCommand(libraryId, {
-      title: command.title,
-      body: command.body,
-      description: command.description || '',
-      tags,
-      language: command.language || 'plaintext',
-    })
-    return { success: true, path, created }
-  } catch (error) {
-    console.error('Library publish error:', error)
-    return { success: false, error: (error as Error).message }
   }
 })
 
@@ -921,21 +977,6 @@ ipcMain.handle('library:bulkPublish', async (_, libraryId: number, commandIds: n
   } catch (error) {
     console.error('Library bulkPublish error:', error)
     return { success: false, error: (error as Error).message, results: [] }
-  }
-})
-
-ipcMain.handle('library:unpublish', async (_, libraryId: number, remotePath: string) => {
-  if (typeof libraryId !== 'number' || typeof remotePath !== 'string' || !remotePath.trim()) {
-    return { success: false, error: 'Invalid parameters' }
-  }
-  try {
-    await github.unpublishCommand(libraryId, remotePath)
-    // Remove the local command entry
-    db.deleteRemoteCommand(libraryId, remotePath)
-    return { success: true }
-  } catch (error) {
-    console.error('Library unpublish error:', error)
-    return { success: false, error: (error as Error).message }
   }
 })
 

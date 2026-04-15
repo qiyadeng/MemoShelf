@@ -21,9 +21,6 @@ export const DEFAULT_SHORTCUTS: Record<string, string> = {
   'action.copyTemplate': 'Shift+c',
   'action.new': 'n',
   'action.edit': 'e',
-  'action.publish': 'p',
-  'action.bulkPublish': 'Shift+p',
-  'action.unpublish': 'u',
   'action.delete': 'Backspace',
 }
 

@@ -1,5 +1,20 @@
 import { contextBridge, ipcRenderer } from "electron"
-import type { Command, Library, SyncResult, AuthStatus, GitHubUser, BulkPublishResult, UpdateStatus, DiscoveredLibrary, DefaultWritableLibraryResult, DefaultWritableLibrarySetupResult, CommandMutationResult, BatchCommandMutationResult } from "../../shared/types"
+import type {
+  Command,
+  Library,
+  SyncResult,
+  AuthStatus,
+  GitHubUser,
+  BulkPublishResult,
+  UpdateStatus,
+  DiscoveredLibrary,
+  DefaultWritableLibraryResult,
+  DefaultWritableLibrarySetupResult,
+  CommandMutationResult,
+  BatchCommandMutationResult,
+  LibraryGitWorkflowSummary,
+  LibraryWorkflowResult,
+} from "../../shared/types"
 
 const subscribeToSignal = (channel: string, callback: () => void) => {
   const listener = () => callback()
@@ -99,6 +114,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('library:syncAll'),
     getAll: (): Promise<Library[]> =>
       ipcRenderer.invoke('library:getAll'),
+    getWorkflowSummary: (libraryId: number): Promise<{ success: boolean; summary?: LibraryGitWorkflowSummary; error?: string }> =>
+      ipcRenderer.invoke('library:getWorkflowSummary', libraryId),
+    fetchOrigin: (libraryId: number): Promise<LibraryWorkflowResult> =>
+      ipcRenderer.invoke('library:fetchOrigin', libraryId),
+    updateFromOrigin: (libraryId: number): Promise<LibraryWorkflowResult> =>
+      ipcRenderer.invoke('library:updateFromOrigin', libraryId),
+    commitChanges: (libraryId: number, message: string): Promise<LibraryWorkflowResult> =>
+      ipcRenderer.invoke('library:commitChanges', libraryId, message),
+    pushChanges: (libraryId: number): Promise<LibraryWorkflowResult> =>
+      ipcRenderer.invoke('library:pushChanges', libraryId),
+    openPullRequest: (libraryId: number): Promise<LibraryWorkflowResult> =>
+      ipcRenderer.invoke('library:openPullRequest', libraryId),
     getDefaultWritableLocalLibrary: (): Promise<DefaultWritableLibraryResult> =>
       ipcRenderer.invoke('library:getDefaultWritableLocalLibrary'),
     setupDefaultWritableLocalLibrary: (): Promise<DefaultWritableLibrarySetupResult> =>
@@ -121,10 +148,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('library:init', libraryId, name, description, subpath),
     getRepoFolders: (repoUrl: string): Promise<{ success: boolean; folders: string[]; error?: string }> =>
       ipcRenderer.invoke('library:getRepoFolders', repoUrl),
-    publish: (libraryId: number, commandId: number): Promise<{ success: boolean; path?: string; created?: boolean; error?: string }> =>
-      ipcRenderer.invoke('library:publish', libraryId, commandId),
-    unpublish: (libraryId: number, remotePath: string): Promise<{ success: boolean; error?: string }> =>
-      ipcRenderer.invoke('library:unpublish', libraryId, remotePath),
     bulkPublish: (libraryId: number, commandIds: number[]): Promise<{ success: boolean; results: BulkPublishResult[]; succeeded?: number; failed?: number; error?: string }> =>
       ipcRenderer.invoke('library:bulkPublish', libraryId, commandIds),
     onBulkPublishProgress: (callback: (data: { result: BulkPublishResult; index: number; total: number }) => void) => {
@@ -210,6 +233,12 @@ declare global {
         sync: (libraryId: number) => Promise<{ success: boolean; added?: number; updated?: number; removed?: number; errors?: string[]; error?: string }>
         syncAll: () => Promise<{ success: boolean; results?: Array<{ library: Library; result: SyncResult }>; error?: string }>
         getAll: () => Promise<Library[]>
+        getWorkflowSummary: (libraryId: number) => Promise<{ success: boolean; summary?: LibraryGitWorkflowSummary; error?: string }>
+        fetchOrigin: (libraryId: number) => Promise<LibraryWorkflowResult>
+        updateFromOrigin: (libraryId: number) => Promise<LibraryWorkflowResult>
+        commitChanges: (libraryId: number, message: string) => Promise<LibraryWorkflowResult>
+        pushChanges: (libraryId: number) => Promise<LibraryWorkflowResult>
+        openPullRequest: (libraryId: number) => Promise<LibraryWorkflowResult>
         getDefaultWritableLocalLibrary: () => Promise<DefaultWritableLibraryResult>
         setupDefaultWritableLocalLibrary: () => Promise<DefaultWritableLibrarySetupResult>
         createCommand: (command: { title: string; body: string; description: string; tags: string; language: string }) => Promise<CommandMutationResult>
@@ -221,8 +250,6 @@ declare global {
         openLocal: (folderPath?: string) => Promise<{ success: boolean; library?: Library; syncResult?: SyncResult; needsPick?: boolean; libraries?: DiscoveredLibrary[]; error?: string }>
         init: (libraryId: number, name: string, description: string, subpath?: string) => Promise<{ success: boolean; library?: Library; syncResult?: SyncResult; error?: string }>
         getRepoFolders: (repoUrl: string) => Promise<{ success: boolean; folders: string[]; error?: string }>
-        publish: (libraryId: number, commandId: number) => Promise<{ success: boolean; path?: string; created?: boolean; error?: string }>
-        unpublish: (libraryId: number, remotePath: string) => Promise<{ success: boolean; error?: string }>
         bulkPublish: (libraryId: number, commandIds: number[]) => Promise<{ success: boolean; results: BulkPublishResult[]; succeeded?: number; failed?: number; error?: string }>
         onBulkPublishProgress: (callback: (data: { result: BulkPublishResult; index: number; total: number }) => void) => () => void
         exportZip: (commandIds: number[], name: string, description: string) => Promise<{ success: boolean; path?: string; commandCount?: number; error?: string }>

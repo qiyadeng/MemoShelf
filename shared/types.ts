@@ -49,6 +49,29 @@ export interface LibraryWorkingTreeStatus {
   error: string | null
 }
 
+export interface LibraryWorkflowActionState {
+  available: boolean
+  reason: string | null
+}
+
+export interface LibraryGitWorkflowSummary {
+  supported: boolean
+  headline: string
+  detail: string
+  tone: 'neutral' | 'success' | 'warning' | 'danger'
+  remote_name: string | null
+  current_branch: string | null
+  default_branch: string | null
+  has_upstream: boolean
+  actions: {
+    fetch: LibraryWorkflowActionState
+    update: LibraryWorkflowActionState
+    commit: LibraryWorkflowActionState
+    push: LibraryWorkflowActionState
+    pull_request: LibraryWorkflowActionState
+  }
+}
+
 export type CommandSource = 'local' | 'remote'
 
 export type LibraryType = 'github' | 'local'
@@ -99,6 +122,16 @@ export interface SyncResult {
   updated: number
   removed: number
   errors: string[]
+}
+
+export interface LibraryWorkflowResult {
+  success: boolean
+  blocked?: boolean
+  message?: string
+  detail?: string
+  error?: string
+  url?: string
+  syncResult?: SyncResult
 }
 
 export interface GitHubUser {

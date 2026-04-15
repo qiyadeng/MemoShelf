@@ -10,17 +10,22 @@ import * as settings from '../electron/main/settings'
 import {
     createLocalLibraryCommands,
     createLocalLibraryCommand,
+    commitLibraryChanges,
     getAllLibrariesWithWorkingTreeStatus,
+    getLibraryGitWorkflowSummary,
     getLibraryWorkingTreeStatus,
     deleteLocalLibraryCommands,
     deleteLocalLibraryCommand,
     migrateLegacyDbOnlyCommandsToDefaultLibrary,
     migrateRemoteLibrariesToLocalWorkingCopies,
     openLocalFolder,
+    openLibraryPullRequest,
+    pushLibraryChanges,
     reindexInitializedLocalLibraries,
     scanLocalFolder,
     setupDefaultWritableLocalLibrary,
     slugify,
+    updateLibraryOrigin,
     updateLocalLibraryCommand,
 } from '../electron/main/local-library'
 
@@ -348,6 +353,178 @@ describe('library working tree status', () => {
 
         expect(library?.working_tree.state).toBe('clean')
         expect(library?.working_tree.checked_at).toBeTruthy()
+    })
+
+    it('summarizes library-level git actions for a git-backed working copy', async () => {
+        const repoRoot = path.join(tmpDir, 'workflow-repo')
+        const remoteRoot = path.join(tmpDir, 'workflow-remote.git')
+        await fs.mkdir(repoRoot, { recursive: true })
+        await fs.writeFile(path.join(repoRoot, '.snipforge.json'), JSON.stringify({
+            name: 'Workflow Library',
+            description: '',
+            format_version: '1.0',
+        }))
+        await fs.writeFile(path.join(repoRoot, 'hello.json'), JSON.stringify({
+            title: 'Hello',
+            body: 'echo hello',
+        }))
+
+        await initGitRepo(repoRoot)
+        await runGit(repoRoot, ['add', '.'])
+        await runGit(repoRoot, ['commit', '-m', 'initial'])
+        await execFileAsync('git', ['init', '--bare', remoteRoot])
+        await runGit(repoRoot, ['remote', 'add', 'origin', remoteRoot])
+        await runGit(repoRoot, ['branch', '-M', 'main'])
+        await runGit(repoRoot, ['push', '--set-upstream', 'origin', 'main'])
+        await runGit(repoRoot, ['remote', 'set-url', 'origin', 'https://github.com/ArtluxDM/SnipForge.git'])
+        await runGit(repoRoot, ['checkout', '-b', 'feature/library-workflow'])
+
+        const libraryId = db.addLibrary(repoRoot, 'Workflow Library', '', '.snipforge.json', 'local', 'owner')
+        db.updateLibraryToLocalWorkingCopy(libraryId, repoRoot, 'https://github.com/ArtluxDM/SnipForge', 'main')
+
+        const summary = await getLibraryGitWorkflowSummary(
+            libraryId,
+            async (args, cwd) => ({ stdout: await runGit(cwd, args) }),
+            async () => {
+                throw Object.assign(new Error('spawn gh ENOENT'), { code: 'ENOENT' })
+            }
+        )
+
+        expect(summary.supported).toBe(true)
+        expect(summary.remote_name).toBe('origin')
+        expect(summary.current_branch).toBe('feature/library-workflow')
+        expect(summary.default_branch).toBe('main')
+        expect(summary.actions.fetch.available).toBe(true)
+        expect(summary.actions.update.available).toBe(false)
+        expect(summary.actions.update.reason).toContain('upstream branch')
+        expect(summary.actions.commit.available).toBe(false)
+        expect(summary.actions.push.available).toBe(true)
+        expect(summary.actions.pull_request.available).toBe(true)
+        expect(summary.actions.pull_request.reason).toContain('compare page')
+    })
+
+    it('commits local changes and blocks update until the working tree is clean', async () => {
+        const repoRoot = path.join(tmpDir, 'commit-repo')
+        const remoteRoot = path.join(tmpDir, 'commit-remote.git')
+        await fs.mkdir(repoRoot, { recursive: true })
+        await fs.writeFile(path.join(repoRoot, '.snipforge.json'), JSON.stringify({
+            name: 'Commit Library',
+            description: '',
+            format_version: '1.0',
+        }))
+        await fs.writeFile(path.join(repoRoot, 'hello.json'), JSON.stringify({
+            title: 'Hello',
+            body: 'echo hello',
+        }))
+
+        await initGitRepo(repoRoot)
+        await runGit(repoRoot, ['add', '.'])
+        await runGit(repoRoot, ['commit', '-m', 'initial'])
+        await execFileAsync('git', ['init', '--bare', remoteRoot])
+        await runGit(repoRoot, ['remote', 'add', 'origin', remoteRoot])
+        await runGit(repoRoot, ['branch', '-M', 'main'])
+        await runGit(repoRoot, ['push', '--set-upstream', 'origin', 'main'])
+
+        const libraryId = db.addLibrary(repoRoot, 'Commit Library', '', '.snipforge.json', 'local', 'owner')
+
+        await fs.writeFile(path.join(repoRoot, 'hello.json'), JSON.stringify({
+            title: 'Hello',
+            body: 'echo updated',
+        }))
+
+        const blockedUpdate = await updateLibraryOrigin(libraryId, async (args, cwd) => ({ stdout: await runGit(cwd, args) }))
+        expect(blockedUpdate.success).toBe(false)
+        expect(blockedUpdate.blocked).toBe(true)
+        expect(blockedUpdate.error).toContain('Commit or discard local changes')
+
+        const commitResult = await commitLibraryChanges(libraryId, 'Save local edits', async (args, cwd) => ({ stdout: await runGit(cwd, args) }))
+        expect(commitResult.success).toBe(true)
+
+        const library = db.getAllLibraries().find(item => item.id === libraryId)!
+        const status = await getLibraryWorkingTreeStatus(library, async (args, cwd) => ({ stdout: await runGit(cwd, args) }))
+        expect(status.state).toBe('clean')
+    })
+
+    it('pushes owner changes to origin and blocks push for consumer access', async () => {
+        const repoRoot = path.join(tmpDir, 'push-repo')
+        const remoteRoot = path.join(tmpDir, 'push-remote.git')
+        await fs.mkdir(repoRoot, { recursive: true })
+        await fs.writeFile(path.join(repoRoot, '.snipforge.json'), JSON.stringify({
+            name: 'Push Library',
+            description: '',
+            format_version: '1.0',
+        }))
+        await fs.writeFile(path.join(repoRoot, 'hello.json'), JSON.stringify({
+            title: 'Hello',
+            body: 'echo hello',
+        }))
+
+        await initGitRepo(repoRoot)
+        await runGit(repoRoot, ['add', '.'])
+        await runGit(repoRoot, ['commit', '-m', 'initial'])
+        await execFileAsync('git', ['init', '--bare', remoteRoot])
+        await runGit(repoRoot, ['remote', 'add', 'origin', remoteRoot])
+        await runGit(repoRoot, ['branch', '-M', 'main'])
+        await runGit(repoRoot, ['push', '--set-upstream', 'origin', 'main'])
+        await runGit(repoRoot, ['checkout', '-b', 'feature/push-flow'])
+
+        const ownerLibraryId = db.addLibrary(repoRoot, 'Push Library', '', '.snipforge.json', 'local', 'owner')
+        await fs.writeFile(path.join(repoRoot, 'hello.json'), JSON.stringify({
+            title: 'Hello',
+            body: 'echo push me',
+        }))
+        await commitLibraryChanges(ownerLibraryId, 'Prepare push', async (args, cwd) => ({ stdout: await runGit(cwd, args) }))
+
+        const pushResult = await pushLibraryChanges(ownerLibraryId, async (args, cwd) => ({ stdout: await runGit(cwd, args) }))
+        expect(pushResult.success).toBe(true)
+
+        const remoteBranches = await execFileAsync('git', ['--git-dir', remoteRoot, 'branch', '--list'])
+        expect(String(remoteBranches.stdout)).toContain('feature/push-flow')
+
+        db.updateLibraryPermission(ownerLibraryId, 'consumer')
+        const blockedPush = await pushLibraryChanges(ownerLibraryId, async (args, cwd) => ({ stdout: await runGit(cwd, args) }))
+        expect(blockedPush.success).toBe(false)
+        expect(blockedPush.blocked).toBe(true)
+        expect(blockedPush.error).toContain('consumer access')
+    })
+
+    it('falls back to a compare URL when GitHub CLI is unavailable', async () => {
+        const repoRoot = path.join(tmpDir, 'pr-repo')
+        const remoteRoot = path.join(tmpDir, 'pr-remote.git')
+        await fs.mkdir(repoRoot, { recursive: true })
+        await fs.writeFile(path.join(repoRoot, '.snipforge.json'), JSON.stringify({
+            name: 'PR Library',
+            description: '',
+            format_version: '1.0',
+        }))
+        await fs.writeFile(path.join(repoRoot, 'hello.json'), JSON.stringify({
+            title: 'Hello',
+            body: 'echo hello',
+        }))
+
+        await initGitRepo(repoRoot)
+        await runGit(repoRoot, ['add', '.'])
+        await runGit(repoRoot, ['commit', '-m', 'initial'])
+        await execFileAsync('git', ['init', '--bare', remoteRoot])
+        await runGit(repoRoot, ['remote', 'add', 'origin', remoteRoot])
+        await runGit(repoRoot, ['branch', '-M', 'main'])
+        await runGit(repoRoot, ['push', '--set-upstream', 'origin', 'main'])
+        await runGit(repoRoot, ['checkout', '-b', 'feature/browser-pr'])
+        await runGit(repoRoot, ['remote', 'set-url', 'origin', 'https://github.com/ArtluxDM/SnipForge.git'])
+
+        const libraryId = db.addLibrary(repoRoot, 'PR Library', '', '.snipforge.json', 'local', 'consumer')
+
+        const result = await openLibraryPullRequest(
+            libraryId,
+            async (args, cwd) => ({ stdout: await runGit(cwd, args) }),
+            async () => {
+                throw Object.assign(new Error('spawn gh ENOENT'), { code: 'ENOENT' })
+            }
+        )
+
+        expect(result.success).toBe(true)
+        expect(result.url).toBe('https://github.com/ArtluxDM/SnipForge/compare/main...feature%2Fbrowser-pr?expand=1')
+        expect(result.message).toContain('GitHub CLI is unavailable')
     })
 })
 

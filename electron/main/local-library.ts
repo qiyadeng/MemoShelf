@@ -9,7 +9,18 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import AdmZip from 'adm-zip'
 import * as db from './database'
 import * as settings from './settings'
-import type { BatchCommandMutationResult, CommandMutationResult, DiscoveredLibrary, Library, LibraryManifest, LibraryWorkingTreeStatus, RemoteCommand, SyncResult } from '../../shared/types'
+import type {
+    BatchCommandMutationResult,
+    CommandMutationResult,
+    DiscoveredLibrary,
+    Library,
+    LibraryGitWorkflowSummary,
+    LibraryManifest,
+    LibraryWorkflowResult,
+    LibraryWorkingTreeStatus,
+    RemoteCommand,
+    SyncResult,
+} from '../../shared/types'
 import {
     buildLibraryCommandFileData,
     normalizeCommandId,
@@ -42,6 +53,25 @@ const IMAGE_TAG_RE = /<img\b[^>]*>/gi
 const IMAGE_SRC_ATTR_RE = /\bsrc=(['"])(.*?)\1/i
 const execFileAsync = promisify(execFile)
 type GitCommandRunner = (args: string[], cwd: string) => Promise<{ stdout: string }>
+type CommandRunner = (command: string, args: string[], cwd?: string) => Promise<{ stdout: string }>
+
+interface GitWorkflowContext {
+    library: Library
+    workingTree: LibraryWorkingTreeStatus
+    remoteName: string | null
+    remoteUrl: string | null
+    currentBranch: string | null
+    defaultBranch: string | null
+    upstreamBranch: string | null
+    hasUpstream: boolean
+    githubRepo: {
+        owner: string
+        repo: string
+        httpsUrl: string
+    } | null
+    gitUnavailable: boolean
+    gitError: string | null
+}
 
 function commandAttachmentsFolderPath(libraryRoot: string, commandId: string): string {
     return path.join(libraryRoot, LIBRARY_ATTACHMENTS_DIR, commandId)
@@ -63,6 +93,11 @@ function createWorkingTreeStatus(
 
 async function runSystemGit(args: string[], cwd: string): Promise<{ stdout: string }> {
     const { stdout } = await execFileAsync('git', ['-C', cwd, ...args])
+    return { stdout: String(stdout) }
+}
+
+async function runCommand(command: string, args: string[], cwd?: string): Promise<{ stdout: string }> {
+    const { stdout } = await execFileAsync(command, args, cwd ? { cwd } : undefined)
     return { stdout: String(stdout) }
 }
 
@@ -117,6 +152,178 @@ function isNotRepoError(error: unknown): boolean {
     const message = `${execError?.message || ''}\n${stderr}`.toLowerCase()
 
     return message.includes('not a git repository')
+}
+
+function trimStdout(stdout: string): string {
+    return stdout.trim()
+}
+
+async function tryRunGit(
+    runGit: GitCommandRunner,
+    cwd: string,
+    args: string[]
+): Promise<{ ok: true; stdout: string } | { ok: false; error: unknown }> {
+    try {
+        const result = await runGit(args, cwd)
+        return { ok: true, stdout: String(result.stdout) }
+    } catch (error) {
+        return { ok: false, error }
+    }
+}
+
+function normalizeGitHubRemoteUrl(remoteUrl: string): GitWorkflowContext['githubRepo'] {
+    const trimmed = remoteUrl.trim()
+    if (!trimmed) {
+        return null
+    }
+
+    const sshMatch = trimmed.match(/^git@github\.com:([^/]+)\/(.+?)(?:\.git)?$/i)
+    if (sshMatch) {
+        const [, owner, repo] = sshMatch
+        return {
+            owner,
+            repo,
+            httpsUrl: `https://github.com/${owner}/${repo}`,
+        }
+    }
+
+    const sshProtocolMatch = trimmed.match(/^ssh:\/\/git@github\.com\/([^/]+)\/(.+?)(?:\.git)?$/i)
+    if (sshProtocolMatch) {
+        const [, owner, repo] = sshProtocolMatch
+        return {
+            owner,
+            repo,
+            httpsUrl: `https://github.com/${owner}/${repo}`,
+        }
+    }
+
+    const httpsMatch = trimmed.match(/^https:\/\/github\.com\/([^/]+)\/(.+?)(?:\.git)?$/i)
+    if (httpsMatch) {
+        const [, owner, repo] = httpsMatch
+        return {
+            owner,
+            repo,
+            httpsUrl: `https://github.com/${owner}/${repo}`,
+        }
+    }
+
+    return null
+}
+
+function isLikelyCommitish(ref: string | null | undefined): boolean {
+    return !!ref && /^[0-9a-f]{7,40}$/i.test(ref)
+}
+
+async function resolveGitWorkflowContext(
+    library: Library,
+    runGit: GitCommandRunner = runSystemGit
+): Promise<GitWorkflowContext> {
+    const workingTree = await getLibraryWorkingTreeStatus(library, runGit)
+
+    if (!library.local_path) {
+        return {
+            library,
+            workingTree,
+            remoteName: null,
+            remoteUrl: null,
+            currentBranch: null,
+            defaultBranch: null,
+            upstreamBranch: null,
+            hasUpstream: false,
+            githubRepo: null,
+            gitUnavailable: false,
+            gitError: 'This library has no local working copy.',
+        }
+    }
+
+    if (workingTree.state === 'git_unavailable') {
+        return {
+            library,
+            workingTree,
+            remoteName: null,
+            remoteUrl: null,
+            currentBranch: null,
+            defaultBranch: null,
+            upstreamBranch: null,
+            hasUpstream: false,
+            githubRepo: null,
+            gitUnavailable: true,
+            gitError: workingTree.error,
+        }
+    }
+
+    if (workingTree.state === 'not_repo' || workingTree.state === 'no_working_copy' || workingTree.state === 'error') {
+        return {
+            library,
+            workingTree,
+            remoteName: null,
+            remoteUrl: null,
+            currentBranch: null,
+            defaultBranch: null,
+            upstreamBranch: null,
+            hasUpstream: false,
+            githubRepo: null,
+            gitUnavailable: false,
+            gitError: workingTree.error,
+        }
+    }
+
+    const remoteNameResult = await tryRunGit(runGit, library.local_path, ['remote'])
+    const remoteName = remoteNameResult.ok
+        ? trimStdout(remoteNameResult.stdout).split('\n').map(value => value.trim()).find(Boolean) || null
+        : null
+    const remoteUrlResult = remoteName
+        ? await tryRunGit(runGit, library.local_path, ['remote', 'get-url', remoteName])
+        : { ok: false as const, error: new Error('No remote configured') }
+    const remoteUrl = remoteUrlResult.ok ? trimStdout(remoteUrlResult.stdout) || null : null
+
+    const branchResult = await tryRunGit(runGit, library.local_path, ['branch', '--show-current'])
+    const currentBranch = branchResult.ok ? trimStdout(branchResult.stdout) || null : null
+
+    const upstreamResult = await tryRunGit(runGit, library.local_path, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'])
+    const upstreamBranch = upstreamResult.ok ? trimStdout(upstreamResult.stdout) || null : null
+    const hasUpstream = !!upstreamBranch
+
+    const defaultBranchResult = remoteName
+        ? await tryRunGit(runGit, library.local_path, ['symbolic-ref', '--quiet', '--short', `refs/remotes/${remoteName}/HEAD`])
+        : { ok: false as const, error: new Error('No remote configured') }
+    const remoteShowResult = !defaultBranchResult.ok && remoteName
+        ? await tryRunGit(runGit, library.local_path, ['remote', 'show', remoteName])
+        : { ok: false as const, error: new Error('Remote HEAD already resolved') }
+    const remoteHeadBranch = remoteShowResult.ok
+        ? trimStdout(remoteShowResult.stdout)
+            .split('\n')
+            .map(line => line.trim())
+            .find(line => line.startsWith('HEAD branch: '))
+            ?.replace('HEAD branch: ', '')
+            .trim() || null
+        : null
+    const localDefaultBranchResult = await tryRunGit(runGit, library.local_path, ['branch', '--list', 'main', 'master'])
+    const localDefaultBranch = localDefaultBranchResult.ok
+        ? trimStdout(localDefaultBranchResult.stdout)
+            .split('\n')
+            .map(line => line.replace(/^[* ]+/, '').trim())
+            .find(Boolean) || null
+        : null
+    const defaultBranch = defaultBranchResult.ok
+        ? trimStdout(defaultBranchResult.stdout).replace(`${remoteName}/`, '') || null
+        : (remoteHeadBranch && remoteHeadBranch !== '(unknown)' ? remoteHeadBranch : null)
+            || localDefaultBranch
+            || (!isLikelyCommitish(library.origin?.ref) ? library.origin?.ref || null : null)
+
+    return {
+        library,
+        workingTree,
+        remoteName,
+        remoteUrl,
+        currentBranch,
+        defaultBranch,
+        upstreamBranch,
+        hasUpstream,
+        githubRepo: remoteUrl ? normalizeGitHubRemoteUrl(remoteUrl) : null,
+        gitUnavailable: false,
+        gitError: null,
+    }
 }
 
 export async function getLibraryWorkingTreeStatus(
@@ -178,11 +385,375 @@ export async function getLibraryWorkingTreeStatus(
 export async function getAllLibrariesWithWorkingTreeStatus(): Promise<Library[]> {
     const libraries = db.getAllLibraries()
     return Promise.all(
-        libraries.map(async (library) => ({
-            ...library,
-            working_tree: await getLibraryWorkingTreeStatus(library),
-        }))
+        libraries.map(async (library) => {
+            const context = await resolveGitWorkflowContext(library)
+            const inferredOrigin = !library.origin && context.githubRepo
+                ? {
+                    provider: 'github' as const,
+                    url: context.githubRepo.httpsUrl,
+                    ref: context.defaultBranch,
+                }
+                : library.origin
+
+            return {
+                ...library,
+                origin: inferredOrigin,
+                working_tree: context.workingTree,
+            }
+        })
     )
+}
+
+function createWorkflowAction(available: boolean, reason: string | null = null) {
+    return { available, reason }
+}
+
+function getEffectiveWorkflowPermission(context: GitWorkflowContext): Library['permission'] {
+    if (!context.library.origin && context.githubRepo) {
+        return 'consumer'
+    }
+
+    return context.library.permission
+}
+
+export async function getLibraryGitWorkflowSummary(
+    libraryId: number,
+    runGit: GitCommandRunner = runSystemGit,
+    exec: CommandRunner = runCommand
+): Promise<LibraryGitWorkflowSummary> {
+    const library = db.getAllLibraries().find(item => item.id === libraryId)
+    if (!library) {
+        throw new Error(`Library not found: ${libraryId}`)
+    }
+
+    const context = await resolveGitWorkflowContext(library, runGit)
+    const { workingTree } = context
+
+    if (context.gitUnavailable) {
+        const reason = workingTree.error || 'Install git to use library workflows.'
+        return {
+            supported: false,
+            headline: 'System git unavailable',
+            detail: reason,
+            tone: 'warning',
+            remote_name: null,
+            current_branch: null,
+            default_branch: null,
+            has_upstream: false,
+            actions: {
+                fetch: createWorkflowAction(false, reason),
+                update: createWorkflowAction(false, reason),
+                commit: createWorkflowAction(false, reason),
+                push: createWorkflowAction(false, reason),
+                pull_request: createWorkflowAction(false, reason),
+            },
+        }
+    }
+
+    if (workingTree.state === 'not_repo') {
+        const reason = 'This library has origin metadata, but the folder is not a git working copy yet.'
+        return {
+            supported: false,
+            headline: 'Git working copy required',
+            detail: reason,
+            tone: 'warning',
+            remote_name: null,
+            current_branch: null,
+            default_branch: null,
+            has_upstream: false,
+            actions: {
+                fetch: createWorkflowAction(false, reason),
+                update: createWorkflowAction(false, reason),
+                commit: createWorkflowAction(false, reason),
+                push: createWorkflowAction(false, reason),
+                pull_request: createWorkflowAction(false, reason),
+            },
+        }
+    }
+
+    if (!context.remoteName || !context.remoteUrl) {
+        const reason = library.origin
+            ? 'No git remote is configured for this working copy.'
+            : 'No GitHub origin metadata or git remote is configured for this library.'
+        return {
+            supported: false,
+            headline: 'Remote origin missing',
+            detail: reason,
+            tone: 'warning',
+            remote_name: context.remoteName,
+            current_branch: context.currentBranch,
+            default_branch: context.defaultBranch,
+            has_upstream: context.hasUpstream,
+            actions: {
+                fetch: createWorkflowAction(false, reason),
+                update: createWorkflowAction(false, reason),
+                commit: createWorkflowAction(false, reason),
+                push: createWorkflowAction(false, reason),
+                pull_request: createWorkflowAction(false, reason),
+            },
+        }
+    }
+
+    const effectivePermission = getEffectiveWorkflowPermission(context)
+    const branchMissingReason = 'This working copy is on a detached HEAD, so branch-based workflows are blocked.'
+    const updateBlockedReason = workingTree.has_changes
+        ? 'Commit or discard local changes before pulling remote updates.'
+        : !context.hasUpstream
+            ? 'This branch does not track an upstream branch yet.'
+            : null
+    const pushBlockedReason = !context.currentBranch
+        ? branchMissingReason
+        : effectivePermission === 'consumer'
+            ? 'Push stays disabled for consumer access. Use the pull request flow instead.'
+            : null
+
+    let pullRequestAction = createWorkflowAction(false, 'Pull request workflows require a GitHub remote origin.')
+    if (context.githubRepo) {
+        const prReason = !context.currentBranch
+            ? branchMissingReason
+            : !context.defaultBranch
+                ? 'SnipForge could not determine the base branch for this origin.'
+                : context.currentBranch === context.defaultBranch
+                    ? 'Create or switch to a feature branch before opening a pull request.'
+                    : null
+
+        if (!prReason) {
+            try {
+                await exec('gh', ['--version'])
+                pullRequestAction = createWorkflowAction(true)
+            } catch {
+                pullRequestAction = createWorkflowAction(
+                    true,
+                    'GitHub CLI is unavailable, so SnipForge will open the compare page in your browser instead.'
+                )
+            }
+        } else {
+            pullRequestAction = createWorkflowAction(false, prReason)
+        }
+    }
+
+    const detail = workingTree.has_changes
+        ? 'Local changes are ready to commit from this library workflow.'
+        : 'Working copy is clean and ready for fetch, update, push, or PR actions.'
+
+    return {
+        supported: true,
+        headline: 'Git workflow ready',
+        detail,
+        tone: workingTree.has_changes ? 'warning' : 'success',
+        remote_name: context.remoteName,
+        current_branch: context.currentBranch,
+        default_branch: context.defaultBranch,
+        has_upstream: context.hasUpstream,
+        actions: {
+            fetch: createWorkflowAction(true),
+            update: createWorkflowAction(!updateBlockedReason, updateBlockedReason),
+            commit: createWorkflowAction(workingTree.has_changes, workingTree.has_changes ? null : 'No local changes to commit.'),
+            push: createWorkflowAction(!pushBlockedReason, pushBlockedReason),
+            pull_request: pullRequestAction,
+        },
+    }
+}
+
+function buildCompareUrl(context: GitWorkflowContext): string | null {
+    if (!context.githubRepo || !context.currentBranch || !context.defaultBranch) {
+        return null
+    }
+
+    return `${context.githubRepo.httpsUrl}/compare/${encodeURIComponent(context.defaultBranch)}...${encodeURIComponent(context.currentBranch)}?expand=1`
+}
+
+async function getRequiredGitWorkflowContext(
+    libraryId: number,
+    runGit: GitCommandRunner = runSystemGit
+): Promise<GitWorkflowContext> {
+    const library = db.getAllLibraries().find(item => item.id === libraryId)
+    if (!library) {
+        throw new Error(`Library not found: ${libraryId}`)
+    }
+
+    return resolveGitWorkflowContext(library, runGit)
+}
+
+export async function fetchLibraryOrigin(
+    libraryId: number,
+    runGit: GitCommandRunner = runSystemGit
+): Promise<LibraryWorkflowResult> {
+    const context = await getRequiredGitWorkflowContext(libraryId, runGit)
+
+    if (context.gitUnavailable) {
+        return { success: false, blocked: true, error: context.workingTree.error || 'System git is unavailable on this machine.' }
+    }
+
+    if (!context.library.local_path || !context.remoteName) {
+        return { success: false, blocked: true, error: 'This library is not connected to a git remote yet.' }
+    }
+
+    try {
+        await runGit(['fetch', '--prune', context.remoteName], context.library.local_path)
+        return { success: true, message: `Fetched latest refs from ${context.remoteName}.` }
+    } catch (error) {
+        return { success: false, error: (error as Error).message }
+    }
+}
+
+export async function updateLibraryOrigin(
+    libraryId: number,
+    runGit: GitCommandRunner = runSystemGit
+): Promise<LibraryWorkflowResult> {
+    const context = await getRequiredGitWorkflowContext(libraryId, runGit)
+
+    if (context.gitUnavailable) {
+        return { success: false, blocked: true, error: context.workingTree.error || 'System git is unavailable on this machine.' }
+    }
+
+    if (!context.library.local_path || !context.remoteName) {
+        return { success: false, blocked: true, error: 'This library is not connected to a git remote yet.' }
+    }
+
+    if (context.workingTree.has_changes) {
+        return { success: false, blocked: true, error: 'Commit or discard local changes before updating from origin.' }
+    }
+
+    if (!context.hasUpstream) {
+        return { success: false, blocked: true, error: 'This branch does not track an upstream branch yet.' }
+    }
+
+    try {
+        await runGit(['pull', '--ff-only'], context.library.local_path)
+        const syncResult = await syncLocalLibrary(libraryId, true)
+        return {
+            success: true,
+            message: 'Working copy updated from origin.',
+            syncResult,
+        }
+    } catch (error) {
+        return { success: false, error: (error as Error).message }
+    }
+}
+
+export async function commitLibraryChanges(
+    libraryId: number,
+    message: string,
+    runGit: GitCommandRunner = runSystemGit
+): Promise<LibraryWorkflowResult> {
+    const context = await getRequiredGitWorkflowContext(libraryId, runGit)
+
+    if (context.gitUnavailable) {
+        return { success: false, blocked: true, error: context.workingTree.error || 'System git is unavailable on this machine.' }
+    }
+
+    if (!context.library.local_path) {
+        return { success: false, blocked: true, error: 'This library has no local working copy.' }
+    }
+
+    if (!context.workingTree.has_changes) {
+        return { success: false, blocked: true, error: 'No local changes to commit.' }
+    }
+
+    const trimmedMessage = message.trim()
+    if (!trimmedMessage) {
+        return { success: false, blocked: true, error: 'Commit message is required.' }
+    }
+
+    try {
+        await runGit(['add', '-A', '--', '.'], context.library.local_path)
+        await runGit(['commit', '-m', trimmedMessage], context.library.local_path)
+        return { success: true, message: 'Committed local library changes.' }
+    } catch (error) {
+        return { success: false, error: (error as Error).message }
+    }
+}
+
+export async function pushLibraryChanges(
+    libraryId: number,
+    runGit: GitCommandRunner = runSystemGit
+): Promise<LibraryWorkflowResult> {
+    const context = await getRequiredGitWorkflowContext(libraryId, runGit)
+    const effectivePermission = getEffectiveWorkflowPermission(context)
+
+    if (context.gitUnavailable) {
+        return { success: false, blocked: true, error: context.workingTree.error || 'System git is unavailable on this machine.' }
+    }
+
+    if (!context.library.local_path || !context.remoteName) {
+        return { success: false, blocked: true, error: 'This library is not connected to a git remote yet.' }
+    }
+
+    if (effectivePermission === 'consumer') {
+        return { success: false, blocked: true, error: 'Push stays disabled for consumer access. Use the pull request flow instead.' }
+    }
+
+    if (!context.currentBranch) {
+        return { success: false, blocked: true, error: 'Detached HEAD cannot be pushed from this workflow.' }
+    }
+
+    try {
+        await runGit(['push', '--set-upstream', context.remoteName, context.currentBranch], context.library.local_path)
+        return { success: true, message: `Pushed ${context.currentBranch} to ${context.remoteName}.` }
+    } catch (error) {
+        return { success: false, error: (error as Error).message }
+    }
+}
+
+export async function openLibraryPullRequest(
+    libraryId: number,
+    runGit: GitCommandRunner = runSystemGit,
+    exec: CommandRunner = runCommand
+): Promise<LibraryWorkflowResult> {
+    const context = await getRequiredGitWorkflowContext(libraryId, runGit)
+
+    if (context.gitUnavailable) {
+        return { success: false, blocked: true, error: context.workingTree.error || 'System git is unavailable on this machine.' }
+    }
+
+    if (!context.library.local_path || !context.currentBranch) {
+        return { success: false, blocked: true, error: 'Create or switch to a branch before opening a pull request.' }
+    }
+
+    if (!context.githubRepo) {
+        return { success: false, blocked: true, error: 'Pull request workflows are only available for GitHub remotes right now.' }
+    }
+
+    if (!context.defaultBranch) {
+        return { success: false, blocked: true, error: 'SnipForge could not determine the base branch for this origin.' }
+    }
+
+    if (context.currentBranch === context.defaultBranch) {
+        return { success: false, blocked: true, error: 'Switch to a feature branch before opening a pull request.' }
+    }
+
+    const url = buildCompareUrl(context)
+    if (!url) {
+        return { success: false, blocked: true, error: 'SnipForge could not build a pull request URL for this library.' }
+    }
+
+    try {
+        await exec('gh', [
+            'pr',
+            'create',
+            '--web',
+            '--repo',
+            `${context.githubRepo.owner}/${context.githubRepo.repo}`,
+            '--base',
+            context.defaultBranch,
+            '--head',
+            context.currentBranch,
+        ], context.library.local_path)
+
+        return {
+            success: true,
+            message: 'Opened pull request flow in GitHub CLI.',
+            url,
+        }
+    } catch {
+        return {
+            success: true,
+            message: 'GitHub CLI is unavailable. Opening the compare page in your browser instead.',
+            detail: 'Push the branch first if GitHub does not recognize it yet.',
+            url,
+        }
+    }
 }
 
 function toPosixPath(value: string): string {
