@@ -35,6 +35,7 @@ QUIZZES.md
 
 # Local ideas / feature brainstorming (not tracked)
 .ideas/
+temp*.md
 
 # Local runtime/build caches
 .cache/
