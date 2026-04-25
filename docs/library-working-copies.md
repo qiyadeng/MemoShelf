@@ -10,6 +10,24 @@ Library Working Copies reframes SnipForge around one simple rule: every command 
 
 ## Active Notes
 
+### Issue #57: dedicated library management modal
+
+Plan:
+- remove the inline per-library management panel from `SettingsModal.vue` so the Libraries tab stays a directory of libraries, not a cramped nested workspace
+- add a dedicated `LibraryManagementModal.vue` component that owns the focused per-library surface for command list, selection, export/import actions, and origin workflow controls
+- keep Settings responsible for opening/closing the management surface and refreshing library data, while the modal handles the in-context library workflow presentation
+- preserve existing library-level actions after the refactor, but stop depending on the squished inline layout that caused the missing/blank preview space regression
+
+Final notes:
+- moved the per-library management UI out of `SettingsModal.vue` into a dedicated `src/components/LibraryManagementModal.vue` overlay, so the Libraries tab now acts like a directory while focused management happens in a separate workspace
+- kept Settings responsible for library list orchestration, modal open/close, and backend refresh/workflow calls, while the new modal owns command selection/filter/export controls and the library-specific layout
+- preserved the existing library-level actions inside the new modal: refresh, sync, origin fetch/update/relink/commit/push/PR, import for the default writable library, selected-command delete, and selected-command export
+- tightened library zip export from the management surface to use the modal’s explicit selected command IDs instead of relying on the old inline state path
+
+Verification:
+- `pnpm exec vue-tsc --noEmit`
+- `pnpm vitest run tests/preload.test.ts tests/library-changes.test.ts`
+
 ### Issue #55: reconcile library docs and retire stale remote-library references
 
 Plan:

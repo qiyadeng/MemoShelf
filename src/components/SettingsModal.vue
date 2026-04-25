@@ -443,301 +443,6 @@
               <p class="section-description">Open a local folder or subscribe to a GitHub repo.</p>
             </div>
 
-            <div v-if="managedLibrary" class="library-management-panel">
-              <div class="library-management-header">
-                <button class="library-management-back" @click="closeLibraryManagement">
-                  ← Back
-                </button>
-                <div class="library-management-copy">
-                  <div class="library-management-title-row">
-                    <h4>{{ managedLibrary.name }}</h4>
-                    <span
-                      v-if="defaultWritableLibrary?.id === managedLibrary.id"
-                      class="library-role-badge default"
-                    >Default writable</span>
-                  </div>
-                  <p class="library-management-path">
-                    {{ managedLibrary.type === 'local' ? managedLibrary.github_repo : managedLibrary.github_repo }}
-                  </p>
-                  <p class="library-management-note">
-                    {{ managementContextNote }}
-                  </p>
-                </div>
-              </div>
-
-              <div class="library-changes-panel">
-                <div class="library-changes-header">
-                  <div class="library-changes-copy">
-                    <h5>Changes</h5>
-                    <p class="library-changes-note">
-                      {{ managedLibraryChangesSummary.headline }}. {{ managedLibraryChangesSummary.detail }}
-                    </p>
-                  </div>
-                  <div class="library-changes-actions">
-                    <button
-                      class="library-action-btn subtle"
-                      @click="handleRefreshManagedLibrary"
-                      :disabled="syncing"
-                      title="Refresh working tree status"
-                    >
-                      Refresh
-                    </button>
-                    <button
-                      v-if="managedLibraryChangesSummary.canSync"
-                      @click="handleSyncLibrary(managedLibrary.id)"
-                      class="library-action-btn subtle"
-                      :disabled="syncing"
-                      :title="managedLibraryChangesSummary.syncTitle"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="23 4 23 10 17 10"></polyline>
-                        <polyline points="1 20 1 14 7 14"></polyline>
-                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-                      </svg>
-                      {{ syncing ? 'Syncing...' : 'Sync' }}
-                    </button>
-                  </div>
-                </div>
-
-                <div class="library-changes-grid">
-                  <div class="library-change-card">
-                    <span class="library-change-label">Origin</span>
-                    <span class="library-change-value">
-                      {{ managedLibrary.origin ? 'GitHub' : 'Local only' }}
-                    </span>
-                    <span class="library-change-meta">
-                      {{ managedLibrary.origin ? managedLibrary.origin.url : 'No remote origin configured for this library.' }}
-                    </span>
-                    <span v-if="managedLibrary.origin?.ref" class="library-change-meta">
-                      Ref: {{ managedLibrary.origin.ref }}
-                    </span>
-                  </div>
-
-                  <div class="library-change-card">
-                    <span class="library-change-label">Working tree</span>
-                    <span class="library-change-value" :class="`library-change-value--${managedLibraryChangesSummary.tone}`">
-                      {{ managedLibraryWorkingTreeLabel }}
-                    </span>
-                    <span class="library-change-meta">
-                      {{ managedLibraryChangesSummary.detail }}
-                    </span>
-                    <span v-if="managedLibrary.working_tree.checked_at" class="library-change-meta">
-                      Checked {{ formatSyncTime(managedLibrary.working_tree.checked_at) }}
-                    </span>
-                  </div>
-
-                  <div
-                    v-if="managedLibrary.working_tree.state === 'dirty' || managedLibrary.working_tree.state === 'clean'"
-                    class="library-change-card library-change-card--counts"
-                  >
-                    <span class="library-change-label">File summary</span>
-                    <div class="library-change-counts">
-                      <span class="library-change-count">
-                        <strong>{{ managedLibrary.working_tree.modified }}</strong>
-                        modified
-                      </span>
-                      <span class="library-change-count">
-                        <strong>{{ managedLibrary.working_tree.added }}</strong>
-                        new
-                      </span>
-                      <span class="library-change-count">
-                        <strong>{{ managedLibrary.working_tree.deleted }}</strong>
-                        deleted
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div v-if="managedLibrary.origin" class="library-origin-panel">
-                  <div class="library-origin-header">
-                    <div class="library-changes-copy">
-                      <h5>Origin workflow</h5>
-                      <p v-if="managedLibraryWorkflowSummary" class="library-changes-note">
-                        {{ managedLibraryWorkflowSummary.headline }}. {{ managedLibraryWorkflowSummary.detail }}
-                      </p>
-                      <p v-else-if="managedLibraryWorkflowError" class="library-changes-note library-changes-note--danger">
-                        {{ managedLibraryWorkflowError }}
-                      </p>
-                      <p v-else class="library-changes-note">
-                        Checking git-backed workflow support for this library.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div class="library-changes-grid">
-                    <div class="library-change-card">
-                      <span class="library-change-label">Remote</span>
-                      <span class="library-change-value">
-                        {{ managedLibraryWorkflowSummary?.remote_name || 'Unavailable' }}
-                      </span>
-                      <span class="library-change-meta">
-                        {{ managedLibrary.origin.url }}
-                      </span>
-                    </div>
-
-                    <div class="library-change-card">
-                      <span class="library-change-label">Branch</span>
-                      <span class="library-change-value">
-                        {{ managedLibraryWorkflowSummary?.current_branch || 'Detached / unknown' }}
-                      </span>
-                      <span class="library-change-meta">
-                        Base: {{ managedLibraryWorkflowSummary?.default_branch || 'Unknown' }}
-                      </span>
-                      <span class="library-change-meta">
-                        {{ managedLibraryWorkflowSummary?.has_upstream ? 'Tracks an upstream branch.' : 'No upstream branch configured.' }}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div class="library-origin-actions">
-                    <button
-                      v-if="managedLibrary.working_tree.state === 'not_repo'"
-                      class="library-action-btn subtle"
-                      :disabled="!!managedWorkflowBusy"
-                      title="Choose the real git-backed folder for this library"
-                      @click="handleRelinkWorkingCopy"
-                    >
-                      {{ managedWorkflowBusy === 'relink' ? 'Relinking...' : 'Relink Working Copy' }}
-                    </button>
-                    <button
-                      class="library-action-btn subtle"
-                      :disabled="!!managedWorkflowBusy || !workflowActionState.fetch.available"
-                      :title="workflowActionState.fetch.reason || 'Fetch origin refs'"
-                      @click="handleFetchOrigin"
-                    >
-                      {{ managedWorkflowBusy === 'fetch' ? 'Fetching...' : 'Fetch' }}
-                    </button>
-                    <button
-                      class="library-action-btn subtle"
-                      :disabled="!!managedWorkflowBusy || !workflowActionState.update.available"
-                      :title="workflowActionState.update.reason || 'Fast-forward this working copy from origin'"
-                      @click="handleUpdateFromOrigin"
-                    >
-                      {{ managedWorkflowBusy === 'update' ? 'Updating...' : 'Update' }}
-                    </button>
-                    <button
-                      class="library-action-btn subtle"
-                      :disabled="!!managedWorkflowBusy || !workflowActionState.commit.available"
-                      :title="workflowActionState.commit.reason || 'Commit local changes in this library'"
-                      @click="handleCommitLibraryChanges"
-                    >
-                      {{ managedWorkflowBusy === 'commit' ? 'Committing...' : 'Commit' }}
-                    </button>
-                    <button
-                      class="library-action-btn subtle"
-                      :disabled="!!managedWorkflowBusy || !workflowActionState.push.available"
-                      :title="workflowActionState.push.reason || 'Push the current branch to origin'"
-                      @click="handlePushLibraryChanges"
-                    >
-                      {{ managedWorkflowBusy === 'push' ? 'Pushing...' : 'Push' }}
-                    </button>
-                    <button
-                      class="library-action-btn subtle"
-                      :disabled="!!managedWorkflowBusy || !workflowActionState.pull_request.available"
-                      :title="workflowActionState.pull_request.reason || 'Open a pull request from this branch'"
-                      @click="handleOpenLibraryPullRequest"
-                    >
-                      {{ managedWorkflowBusy === 'pull_request' ? 'Opening...' : 'Pull Request' }}
-                    </button>
-                  </div>
-
-                  <p
-                    v-if="managedWorkflowActionNote"
-                    class="library-origin-note"
-                    :class="{ 'library-origin-note--warning': !!managedWorkflowSummaryReason }"
-                  >
-                    {{ managedWorkflowActionNote }}
-                  </p>
-                </div>
-              </div>
-
-              <div class="management-controls">
-                <div class="controls-row">
-                  <div class="bulk-selection">
-                    <input
-                      type="checkbox"
-                      class="select-all-checkbox"
-                      :checked="isAllSelected"
-                      :indeterminate="isIndeterminate"
-                      @change="toggleSelectAll"
-                    />
-                    <span class="selection-counter" :class="{ muted: selectedCommandIds.length === 0 }">
-                      {{ selectedCommandIds.length }} selected
-                    </span>
-                    <button @click.stop="toggleManagementFilterDropdown" :class="['management-filter-button', { active: selectedManagementTags.length > 0 }]" title="Filter by tags">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polygon points="22,3 2,3 10,12.46 10,19 14,21 14,12.46"></polygon>
-                      </svg>
-                    </button>
-
-                    <div v-if="showManagementFilterDropdown" class="filter-dropdown" @click.stop>
-                      <TagSelector
-                        :available-tags="managedAvailableTags"
-                        :selected-tags="selectedManagementTags"
-                        title="Filter by Tags"
-                        @toggle="toggleManagementTag"
-                        @clear-all="clearManagementTags"
-                      />
-                    </div>
-                  </div>
-
-                  <div class="spacer"></div>
-
-                  <div class="action-buttons">
-                    <button
-                      v-if="canDeleteManagedCommands"
-                      @click="handleBulkDelete"
-                      :disabled="selectedCommandIds.length === 0"
-                      class="action-button delete-icon-button"
-                      title="Delete selected"
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M3 6h18"></path>
-                        <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
-                        <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
-                      </svg>
-                    </button>
-                    <button
-                      v-if="canImportIntoManagedLibrary"
-                      @click="handleImport"
-                      class="action-button import-button"
-                    >
-                      Import
-                    </button>
-                    <div class="export-dropdown-wrap" @click.stop>
-                      <button
-                        @click="toggleExportDropdown"
-                        :disabled="selectedCommandIds.length === 0"
-                        class="action-button export-button"
-                      >
-                        Export
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <path d="m6 9 6 6 6-6"></path>
-                        </svg>
-                      </button>
-                      <div v-if="showExportDropdown" class="export-dropdown">
-                        <button class="export-dropdown-item" @click="handleExportBundle">
-                          As Bundle (.json)
-                        </button>
-                        <button class="export-dropdown-item" @click="handleExportAsLibrary">
-                          As Library (.zip)
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="command-list-container">
-                <CommandList
-                  :commands="filteredManagementCommands"
-                  :selected-ids="selectedCommandIds"
-                  @toggle="toggleCommandSelection"
-                  :empty-message="managementEmptyMessage"
-                />
-              </div>
-            </div>
-
             <!-- Sync result notification -->
             <div v-if="syncMessage" class="sync-message" :class="syncMessageType">
               {{ syncMessage }}
@@ -747,6 +452,32 @@
 
       </div>
     </div>
+
+    <LibraryManagementModal
+      :show="!!managedLibrary"
+      :library="managedLibrary"
+      :default-writable-library="defaultWritableLibrary"
+      :commands="managedLibraryCommands"
+      :syncing="syncing"
+      :workflow-summary="managedLibraryWorkflowSummary"
+      :workflow-error="managedLibraryWorkflowError"
+      :workflow-busy="managedWorkflowBusy"
+      :feedback-message="syncMessage"
+      :feedback-message-type="syncMessageType"
+      @close="closeLibraryManagement"
+      @refresh="handleRefreshManagedLibrary"
+      @sync="handleSyncLibrary"
+      @fetch-origin="handleFetchOrigin"
+      @update-origin="handleUpdateFromOrigin"
+      @relink="handleRelinkWorkingCopy"
+      @commit="handleCommitLibraryChanges"
+      @push="handlePushLibraryChanges"
+      @pull-request="handleOpenLibraryPullRequest"
+      @import="handleImport"
+      @bulk-delete="emit('bulk-delete', $event)"
+      @bulk-export="emit('bulk-export', $event)"
+      @export-library="openExportLibraryModal"
+    />
 
     <!-- Library Picker Modal -->
     <div v-if="libraryPicker.visible" class="init-modal-overlay" @click.self="closeLibraryPicker">
@@ -896,9 +627,8 @@
 import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import { filterCommandsByTags, getAllTags, matchesTagFilter } from '../utils/tags'
 import { getInlineSuggestion } from '../utils/autocomplete'
-import { describeLibraryChanges } from '../utils/library-changes'
 import { useSettings } from '../composables/useSettings'
-import CommandList from './CommandList.vue'
+import LibraryManagementModal from './LibraryManagementModal.vue'
 import TagSelector from './TagSelector.vue'
 import type {
   Library,
@@ -1244,19 +974,6 @@ function isWritableLocalLibrary(library: Library | null | undefined): library is
   return !!library && library.type === 'local' && !!library.manifest_path && library.permission !== 'consumer'
 }
 
-function isLocallyManagedCommand(command: Props['commands'][number]): boolean {
-  if (command.source === 'local' && !command.library_id && !command.remote_path) {
-    return true
-  }
-
-  if (command.source !== 'remote' || !command.library_id) {
-    return false
-  }
-
-  const library = libraries.value.find(lib => lib.id === command.library_id)
-  return !!library && library.type === 'local' && library.permission !== 'consumer'
-}
-
 const defaultWritableLibrary = computed(() => {
   const rawId = settings.value['library.defaultWritableLocalLibraryId']
   const libraryId = typeof rawId === 'number' ? rawId : null
@@ -1280,75 +997,9 @@ const managedLibraryCommands = computed(() => {
   if (!managedLibrary.value) return []
   return props.commands.filter(command => command.library_id === managedLibrary.value?.id)
 })
-const managedAvailableTags = computed(() => getAllTags(managedLibraryCommands.value))
-const canDeleteManagedCommands = computed(() => isWritableLocalLibrary(managedLibrary.value))
-const canImportIntoManagedLibrary = computed(() => {
-  return !!managedLibrary.value && managedLibrary.value.id === defaultWritableLibrary.value?.id
-})
-const managementContextNote = computed(() => {
-  if (!managedLibrary.value) return ''
-  if (canImportIntoManagedLibrary.value) {
-    return 'Imports and new commands land in this default writable library.'
-  }
-  if (managedLibrary.value.type === 'local') {
-    return 'This local library is readable here, but imports and new commands still target the default writable library.'
-  }
-  return 'This subscribed library is managed in context here. Export stays available, but destructive local delete is hidden.'
-})
-const managedLibraryChangesSummary = computed(() => {
-  if (!managedLibrary.value) {
-    return {
-      headline: '',
-      detail: '',
-      tone: 'neutral' as const,
-      canSync: false,
-      syncTitle: '',
-    }
-  }
-
-  return describeLibraryChanges(managedLibrary.value)
-})
 const managedLibraryWorkflowSummary = ref<LibraryGitWorkflowSummary | null>(null)
 const managedLibraryWorkflowError = ref('')
 const managedWorkflowBusy = ref<null | 'fetch' | 'update' | 'relink' | 'commit' | 'push' | 'pull_request'>(null)
-const workflowActionState = computed(() => managedLibraryWorkflowSummary.value?.actions || {
-  fetch: { available: false, reason: null },
-  update: { available: false, reason: null },
-  commit: { available: false, reason: null },
-  push: { available: false, reason: null },
-  pull_request: { available: false, reason: null },
-})
-const managedWorkflowSummaryReason = computed(() => {
-  return workflowActionState.value.pull_request.reason
-    || workflowActionState.value.push.reason
-    || workflowActionState.value.update.reason
-    || workflowActionState.value.commit.reason
-    || workflowActionState.value.fetch.reason
-    || ''
-})
-const managedWorkflowActionNote = computed(() => {
-  if (managedLibraryWorkflowError.value) return managedLibraryWorkflowError.value
-  if (!managedLibraryWorkflowSummary.value) return ''
-  return managedWorkflowSummaryReason.value || ''
-})
-const managedLibraryWorkingTreeLabel = computed(() => {
-  if (!managedLibrary.value) return ''
-
-  switch (managedLibrary.value.working_tree.state) {
-    case 'dirty':
-      return 'Dirty'
-    case 'clean':
-      return 'Clean'
-    case 'not_repo':
-      return 'Not a git repo'
-    case 'git_unavailable':
-      return 'Git unavailable'
-    case 'no_working_copy':
-      return 'No working copy'
-    case 'error':
-      return 'Status error'
-  }
-})
 
 // ── Library Picker State ──────────────────────────────────────
 const libraryPicker = ref({
@@ -1436,19 +1087,11 @@ async function loadManagedLibraryWorkflow(libraryId: number) {
 
 function openLibraryManagement(libraryId: number) {
   selectedLibraryId.value = libraryId
-  selectedCommandIds.value = []
-  selectedManagementTags.value = []
-  showManagementFilterDropdown.value = false
-  showExportDropdown.value = false
   loadManagedLibraryWorkflow(libraryId)
 }
 
 function closeLibraryManagement() {
   selectedLibraryId.value = null
-  selectedCommandIds.value = []
-  selectedManagementTags.value = []
-  showManagementFilterDropdown.value = false
-  showExportDropdown.value = false
   managedLibraryWorkflowSummary.value = null
   managedLibraryWorkflowError.value = ''
   managedWorkflowBusy.value = null
@@ -1772,20 +1415,13 @@ const exportLibraryModal = ref({
   exporting: false,
 })
 
-function openExportLibraryModal() {
-  const ids = selectedCommandIds.value.length > 0
-    ? [...selectedCommandIds.value]
-    : []
-  const count = ids.length > 0
-    ? ids.length
-    : props.commands.filter(command => isLocallyManagedCommand(command)).length
-
+function openExportLibraryModal(commandIds: number[]) {
   exportLibraryModal.value = {
     visible: true,
     name: '',
     description: '',
-    commandCount: count,
-    commandIds: ids,
+    commandCount: commandIds.length,
+    commandIds: [...commandIds],
     error: '',
     exporting: false,
   }
@@ -2216,12 +1852,6 @@ const cursorPosition = ref(0)
 const showExportFilterDropdown = ref(false)
 const selectedExportTags = ref<string[]>([])
 
-// Command Management state
-const selectedCommandIds = ref<number[]>([])
-const selectedManagementTags = ref<string[]>([])
-const showManagementFilterDropdown = ref(false)
-const showExportDropdown = ref(false)
-
 // Get available tags for autocomplete and dropdown
 const availableTags = computed(() => {
   return getAllTags(props.commands)
@@ -2420,124 +2050,11 @@ const handleImport = () => {
   emit('import')
 }
 
-// Command Management - Filtered commands based on selected tags
-const filteredManagementCommands = computed(() => {
-  const baseCommands = managedLibraryCommands.value
-
-  if (selectedManagementTags.value.length === 0) {
-    return baseCommands
-  }
-
-  return baseCommands.filter(command =>
-    matchesTagFilter(command.tagsNormalized, selectedManagementTags.value)
-  )
-})
-
-const managementEmptyMessage = computed(() => {
-  if (!managedLibrary.value) {
-    return 'Choose a library to manage its commands'
-  }
-  if (selectedManagementTags.value.length > 0) {
-    return 'No commands in this library match the selected tags'
-  }
-  return 'No commands in this library'
-})
-
-// Management filter dropdown
-const toggleManagementFilterDropdown = () => {
-  showManagementFilterDropdown.value = !showManagementFilterDropdown.value
-}
-
-const toggleManagementTag = (tag: string) => {
-  const index = selectedManagementTags.value.indexOf(tag)
-  if (index === -1) {
-    selectedManagementTags.value.push(tag)
-  } else {
-    selectedManagementTags.value.splice(index, 1)
-  }
-}
-
-const clearManagementTags = () => {
-  selectedManagementTags.value = []
-}
-
 // Close all dropdowns when clicking outside
 const closeAllDropdowns = () => {
-  showManagementFilterDropdown.value = false
   showExportFilterDropdown.value = false
-  showExportDropdown.value = false
   locationOpen.value = false
 }
-
-// Bulk selection
-const isAllSelected = computed(() =>
-  filteredManagementCommands.value.length > 0 &&
-  selectedCommandIds.value.length === filteredManagementCommands.value.length
-)
-
-const isIndeterminate = computed(() =>
-  selectedCommandIds.value.length > 0 &&
-  selectedCommandIds.value.length < filteredManagementCommands.value.length
-)
-
-const toggleSelectAll = () => {
-  if (isAllSelected.value) {
-    selectedCommandIds.value = []
-  } else {
-    selectedCommandIds.value = filteredManagementCommands.value.map(cmd => cmd.id)
-  }
-}
-
-const selectAllCommands = () => {
-  selectedCommandIds.value = filteredManagementCommands.value.map(cmd => cmd.id)
-}
-
-const deselectAllCommands = () => {
-  selectedCommandIds.value = []
-}
-
-const toggleCommandSelection = (id: number) => {
-  const index = selectedCommandIds.value.indexOf(id)
-  if (index === -1) {
-    selectedCommandIds.value.push(id)
-  } else {
-    selectedCommandIds.value.splice(index, 1)
-  }
-}
-
-// Bulk actions
-const handleBulkDelete = () => {
-  if (selectedCommandIds.value.length === 0) return
-  emit('bulk-delete', [...selectedCommandIds.value])
-  selectedCommandIds.value = []
-}
-
-const handleBulkExport = () => {
-  if (selectedCommandIds.value.length === 0) return
-  emit('bulk-export', [...selectedCommandIds.value])
-}
-
-// Export dropdown
-const toggleExportDropdown = () => {
-  showExportDropdown.value = !showExportDropdown.value
-}
-
-const handleExportBundle = () => {
-  showExportDropdown.value = false
-  handleBulkExport()
-}
-
-const handleExportAsLibrary = () => {
-  showExportDropdown.value = false
-  openExportLibraryModal()
-}
-
-watch(managedLibrary, (library) => {
-  if (!library) {
-    selectedCommandIds.value = []
-    selectedManagementTags.value = []
-  }
-})
 </script>
 
 <style scoped>
