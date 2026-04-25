@@ -379,14 +379,15 @@ export function updateLibraryToLocalWorkingCopy(
     libraryId: number,
     localPath: string,
     originUrl: string,
-    originRef: string | null
+    originRef: string | null,
+    manifestPath: string | null = '.snipforge.json'
 ): void {
     if (!db) throw new Error("Database not initialized")
     db.prepare(`
         UPDATE libraries
-        SET github_repo = ?, type = 'local', manifest_path = '.snipforge.json', origin_url = ?, origin_ref = ?
+        SET github_repo = ?, type = 'local', manifest_path = ?, origin_url = ?, origin_ref = ?
         WHERE id = ?
-    `).run(localPath, originUrl, originRef, libraryId)
+    `).run(localPath, manifestPath, originUrl, originRef, libraryId)
 }
 
 export function clearLibraryManifest(libraryId: number): void {

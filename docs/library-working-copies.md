@@ -10,6 +10,27 @@ Library Working Copies reframes SnipForge around one simple rule: every command 
 
 ## Active Notes
 
+### Issue #54: harden legacy command and library migration paths
+
+Plan:
+- stop marking legacy migrated libraries as initialized when the cloned/opened folder does not actually contain a `.snipforge.json`
+- keep legacy DB-only command migration non-destructive when the default writable library exists in SQLite but its folder or manifest is stale on disk
+- add regression coverage for uninitialized legacy working copies and stale default-library upgrade states
+- tighten the docs around what recovery is supported automatically vs what remains a user-visible blocked state
+
+Final notes:
+- `electron/main/database.ts` now lets legacy origin migrations carry a nullable `manifest_path`, so a cloned working copy without `.snipforge.json` is linked locally without being falsely marked as initialized/materialized
+- `electron/main/local-library.ts` now keeps legacy DB-only migration non-destructive when the saved default writable library is stale on disk, returning `completed: false` instead of deleting the SQLite-only commands
+- `tests/database.test.ts` and `tests/local-library.test.ts` now cover both uninitialized migrated working copies and stale default-library recovery behavior
+
+Supported recovery after this hardening:
+- legacy GitHub-library rows can be migrated into a real local working copy even if that repo folder does not currently contain a SnipForge manifest; the library stays uninitialized until the manifest exists
+- stale default writable library records no longer cause destructive legacy-command cleanup during upgrade; the commands remain in SQLite until the writable library is repaired
+
+Still blocked/user-visible:
+- missing or invalid manifests are not auto-repaired; the user still needs to re-init or relink the affected library folder
+- already-migrated stale local paths still surface through normal reindex/sync errors rather than silent success
+
 ### Issue #52: guarantee real git working copies for origin-backed libraries
 
 Plan:

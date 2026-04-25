@@ -610,6 +610,47 @@ describe('local library CRUD', () => {
         expect(db.getAllLibraries()).toHaveLength(1)
     })
 
+    it('keeps migrated origin-backed libraries uninitialized when the cloned working copy has no manifest', async () => {
+        const remoteRepo = 'ArtluxDM/snips'
+        const remoteRoot = path.join(tmpDir, 'remote-no-manifest.git')
+        const seedRoot = path.join(tmpDir, 'seed-no-manifest')
+        await fs.mkdir(seedRoot, { recursive: true })
+        await fs.writeFile(path.join(seedRoot, 'hello-world.json'), JSON.stringify({
+            title: 'Hello World',
+            body: 'echo hello',
+        }))
+
+        await initGitRepo(seedRoot)
+        await runGit(seedRoot, ['add', '.'])
+        await runGit(seedRoot, ['commit', '-m', 'initial'])
+        await runGit(tmpDir, ['init', '--bare', '--initial-branch=main', remoteRoot])
+        await runGit(seedRoot, ['remote', 'add', 'origin', remoteRoot])
+        await runGit(seedRoot, ['branch', '-M', 'main'])
+        await runGit(seedRoot, ['push', '--set-upstream', 'origin', 'main'])
+
+        db.addLibrary(remoteRepo, 'Remote Library', 'Remote desc', null, 'github', 'consumer')
+
+        const result = await migrateRemoteLibrariesToLocalWorkingCopies(tmpDir, {
+            runGit: async (args, cwd) => ({ stdout: await runGit(cwd, args) }),
+            resolveCloneSource: () => remoteRoot,
+        })
+
+        expect(result.migrated).toBe(1)
+        expect(result.errors).toEqual([])
+
+        const migrated = db.getAllLibraries()[0]
+        const expectedRoot = path.join(tmpDir, 'working-copies', 'github', 'ArtluxDM', 'snips')
+        expect(migrated.type).toBe('local')
+        expect(migrated.github_repo).toBe(expectedRoot)
+        expect(migrated.manifest_path).toBeNull()
+        expect(migrated.working_copy).toEqual({
+            local_path: expectedRoot,
+            manifest_path: null,
+            materialized: false,
+        })
+        expect(db.getRemoteCommands(migrated.id)).toHaveLength(0)
+    })
+
     it('relinks a legacy materialized origin-backed library to a real repo-backed folder', async () => {
         const legacyRoot = path.join(tmpDir, 'legacy-copy')
         await fs.mkdir(legacyRoot, { recursive: true })
@@ -1177,5 +1218,30 @@ describe('local library CRUD', () => {
         expect(migratedFile.id).toMatch(/^[0-9a-f-]{36}$/)
         expect(migratedFile.title).toBe('Legacy Migrated Command')
         expect(migratedFile.body).toBe('echo migrate me')
+    })
+
+    it('does not delete legacy DB-only commands when the default library is stale on disk', async () => {
+        const setup = await setupDefaultWritableLocalLibrary(tmpDir)
+        await fs.rm(path.join(tmpDir, '.snipforge.json'))
+        db.addCommand({
+            title: 'Still In DB',
+            body: 'echo keep me',
+            description: 'stale default library',
+            tags: '["legacy"]',
+            language: 'bash',
+            source: 'local',
+            library_id: null,
+            remote_path: null,
+        })
+
+        const result = await migrateLegacyDbOnlyCommandsToDefaultLibrary()
+
+        expect(result.completed).toBe(false)
+        expect(result.library?.id).toBe(setup.library.id)
+        expect(result.migrated).toBe(0)
+        expect(result.skipped).toBe(0)
+        expect(settings.get<boolean>('library.legacyDbMigrationCompleted')).toBe(false)
+        expect(db.getAllCommands().some(command => command.source === 'local' && command.body === 'echo keep me')).toBe(true)
+        expect(db.getRemoteCommands(setup.library.id)).toHaveLength(0)
     })
 })

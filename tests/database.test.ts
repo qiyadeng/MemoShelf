@@ -130,6 +130,21 @@ describe('library contract mapping', () => {
             materialized: true,
         })
     })
+
+    it('keeps migrated GitHub libraries uninitialized when no manifest was found', () => {
+        const libraryId = db.addLibrary('github.com/owner/repo', 'Remote Library', 'desc', null, 'github', 'consumer')
+        db.updateLibraryToLocalWorkingCopy(libraryId, '/tmp/working-copy', 'github.com/owner/repo', 'abc123', null)
+
+        const library = db.getAllLibraries()[0]
+
+        expect(library.local_path).toBe('/tmp/working-copy')
+        expect(library.origin?.url).toBe('github.com/owner/repo')
+        expect(library.working_copy).toEqual({
+            local_path: '/tmp/working-copy',
+            manifest_path: null,
+            materialized: false,
+        })
+    })
 })
 
 // ── syncRemoteCommands ──────────────────────────────────────────

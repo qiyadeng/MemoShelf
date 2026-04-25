@@ -513,7 +513,6 @@ Completed on branch work by April 11, 2026:
 Still open after this session:
 
 - Phase 4 full SQLite demotion from command source of truth to cache/index beyond startup/local-library rebuild behavior
-- Phase 5 migration hardening beyond the current startup happy path
 - hardening around normalization and sync bookkeeping follow-up issues
 
 Issue #24 plan:
@@ -546,3 +545,4 @@ Issue #24 final notes:
 - Settings no longer has a global Manage Commands tab; command management now opens directly from initialized library cards in the Libraries tab.
 - The library list now shows command counts and default-library state so ownership is visible before opening the detail surface.
 - The per-library detail surface scopes filtering, selection, export, and deletion to the active library, while import remains available only for the default writable local library because that is still the app's authoring target.
+- Follow-up hardening now keeps legacy DB-only migration non-destructive when the saved default library is stale on disk, and legacy origin migrations no longer mark a library as initialized unless a real `.snipforge.json` was found in the working copy.

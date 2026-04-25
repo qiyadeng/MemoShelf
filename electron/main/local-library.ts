@@ -1767,7 +1767,8 @@ export async function migrateRemoteLibrariesToLocalWorkingCopies(
                 library.id,
                 targetRoot,
                 library.github_repo,
-                library.last_synced_sha
+                library.last_synced_sha,
+                scanResult?.manifestPath ?? null
             )
 
             if (scanResult) {
@@ -1810,7 +1811,14 @@ export async function migrateLegacyDbOnlyCommandsToDefaultLibrary(): Promise<{
         return { migrated: 0, skipped: 0, library: null, completed: false }
     }
 
-    const scanResult = await scanLocalFolder(library.github_repo)
+    let scanResult: ScanResult
+    try {
+        scanResult = await scanLocalFolder(library.github_repo)
+    } catch {
+        settings.set('library.legacyDbMigrationCompleted', false)
+        return { migrated: 0, skipped: 0, library, completed: false }
+    }
+
     const existingBodies = new Set(scanResult.commands.map(({ command }) => command.body.trim()))
 
     let migrated = 0
@@ -1937,7 +1945,8 @@ export async function relinkOriginLibraryToFolder(libraryId: number, folderPath:
         libraryId,
         folderPath,
         library.origin.url,
-        library.origin.ref
+        library.origin.ref,
+        scanResult.manifestPath
     )
     db.updateLibraryManifest(
         libraryId,
