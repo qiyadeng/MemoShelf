@@ -1,11 +1,26 @@
 # Database Schema
 
-Single source of truth for the SnipForge data model. When a feature adds or modifies columns/tables, update this file in the same commit.
+Single source of truth for the SnipForge persisted data model. When a feature adds or modifies columns/tables, update this file in the same commit.
 
 **Engine:** SQLite via better-sqlite3 (synchronous, WAL mode)
-**Location:** `{userData}/snipforge.db` (Electron's `app.getPath('userData')`)
+**Location:** `{userData}/snipforge.db` (Electron `app.getPath('userData')`)
 **Implementation:** `electron/main/database.ts`
-**Types:** `shared/types.ts`
+**Shared types:** `shared/types.ts`
+
+---
+
+## Current Architecture Summary
+
+SnipForge is now **library-first**:
+
+- command content is canonical in library files on disk
+- SQLite stores a derived command index/cache plus app metadata
+- libraries may be local-only or origin-backed, but both are represented as local working copies in the app model
+- legacy DB-only command rows still exist only as upgrade compatibility until they are migrated out
+
+`docs/library-working-copies.md` is the product/workflow source of truth.
+`docs/library-first-command-storage.md` is the storage/migration source of truth.
+`docs/remote-libraries.md` is archived legacy history.
 
 ---
 
@@ -13,99 +28,152 @@ Single source of truth for the SnipForge data model. When a feature adds or modi
 
 ### commands
 
-Derived command index/cache. Every command that SnipForge can search is projected here, but this table is **not** the canonical source of truth for library-backed commands.
+Derived command index/cache.
 
-- library-backed command content lives in JSON files inside libraries
-- this table stores the indexed projection used for search/listing plus temporary legacy DB-only commands that have not been migrated yet
-- deleting or rebuilding SQLite must not delete commands that still exist in initialized libraries
+Every searchable command is projected into this table, but it is **not** the canonical source of truth for library-backed commands.
+
+- initialized libraries own command truth on disk
+- this table stores indexed projections for search/listing
+- legacy DB-only commands may still exist here temporarily during upgrade compatibility
+- rebuilding SQLite must not delete commands that still exist in libraries
 
 | Column | Type | Default | Description |
 |--------|------|---------|-------------|
-| `id` | INTEGER | PK, auto | |
-| `title` | TEXT | NOT NULL | Command name shown in the list |
-| `body` | TEXT | NOT NULL | The command/snippet content |
-| `description` | TEXT | `''` | Optional description, supports markdown |
+| `id` | INTEGER | PK, auto | SQLite row id for the indexed projection |
+| `title` | TEXT | NOT NULL | Command title shown in the list |
+| `body` | TEXT | NOT NULL | Command/snippet body |
+| `description` | TEXT | `''` | Optional description |
 | `tags` | TEXT | `'[]'` | JSON array of strings |
-| `language` | TEXT | `'plaintext'` | Editor type: `plaintext`, `richtext`, `markdown`, or a code language (`javascript`, `python`, `bash`, etc.) |
-| `source` | TEXT | `'local'` | `'local'` = legacy DB-only command row, `'remote'` = indexed projection of a library-backed command |
-| `library_id` | INTEGER | NULL | FK → `libraries.id` (ON DELETE CASCADE). Set for library-backed indexed rows, NULL for legacy DB-only rows. |
-| `remote_path` | TEXT | NULL | Relative command file path inside the library (for example `get-pods.json`). Used to reconcile indexed rows with filesystem state. |
-| `created_at` | TEXT | NOT NULL | ISO 8601 timestamp |
-| `updated_at` | TEXT | NOT NULL | ISO 8601 timestamp |
+| `language` | TEXT | `'plaintext'` | Editor/rendering language |
+| `source` | TEXT | `'local'` | `'local'` = legacy DB-only row, `'remote'` = indexed library-backed row |
+| `library_id` | INTEGER | NULL | FK → `libraries.id` with `ON DELETE CASCADE`; set for library-backed rows |
+| `remote_path` | TEXT | NULL | Relative command file path inside the owning library |
+| `created_at` | TEXT | NOT NULL | ISO 8601 timestamp from command data |
+| `updated_at` | TEXT | NOT NULL | ISO 8601 timestamp from command data |
 
-**Indices:**
-- `idx_commands_title` — on `title`
-- `idx_commands_updated_at` — on `updated_at DESC`
-- `idx_commands_library_id` — on `library_id`
-- `idx_commands_source` — on `source`
+**Indexes**
+- `idx_commands_title` on `title`
+- `idx_commands_updated_at` on `updated_at DESC`
+- `idx_commands_library_id` on `library_id`
+- `idx_commands_source` on `source`
 
-**Behaviors:**
-- Writable local-library commands are created, edited, and deleted on disk first, then reindexed into this table.
-- Read-only library commands are never edited in-place in SQLite; editing duplicates them into the default writable local library instead.
-- Legacy DB-only rows (`source = 'local'`, `library_id IS NULL`, `remote_path IS NULL`) remain only as upgrade compatibility until migrated into a library.
-- Deleting a library cascades: all indexed command rows with that `library_id` are removed.
+**Behavior notes**
+- writable local-library commands are created, edited, and deleted on disk first, then reindexed here
+- library-backed rows are reconciled by `(library_id, remote_path)` style identity, not by treating SQLite as the owner
+- read-only indexed library commands are never the canonical write target
+- deleting a library removes its indexed command rows through cascade semantics
 
 ### libraries
 
-Library registry and sync metadata. This table tracks both writable local libraries and origin-backed/read-only libraries.
+Library registry plus sync/origin metadata.
+
+This table tracks both local-only libraries and origin-backed libraries. The old `github_repo` column name remains for compatibility, but its meaning is broader now:
+
+- for GitHub/origin-backed libraries it stores the persisted repo/subpath identifier
+- for local libraries it stores the absolute folder path
+
+Current behavior is derived further into the shared `Library` contract with:
+
+- `local_path`
+- `origin`
+- `working_copy`
+- `working_tree`
+
+Those derived fields are assembled in application code rather than stored as raw table columns.
 
 | Column | Type | Default | Description |
 |--------|------|---------|-------------|
-| `id` | INTEGER | PK, auto | |
-| `github_repo` | TEXT | NOT NULL, UNIQUE | Repo identifier, e.g., `ArtluxDM/k8s-commands` |
-| `name` | TEXT | NOT NULL | Display name from the manifest |
-| `description` | TEXT | `''` | From the manifest |
-| `manifest_path` | TEXT | NULL | Path to `.snipforge.json` in the repo (NULL = not initialized) |
-| `last_synced_at` | TEXT | NULL | ISO 8601 timestamp of last successful sync |
-| `last_synced_sha` | TEXT | NULL | Content hash / sync marker for the last successful reindex or origin sync |
-| `origin_url` | TEXT | NULL | Canonical origin repo URL when this library is backed by a GitHub origin |
-| `origin_ref` | TEXT | NULL | Preferred origin branch/ref when known |
-| `auto_sync` | INTEGER | `0` | Per-library auto-sync toggle (0 = off, 1 = on) |
-| `permission` | TEXT | `'consumer'` | User's role: `'owner'`, `'curator'`, or `'consumer'` |
+| `id` | INTEGER | PK, auto | Library row id |
+| `github_repo` | TEXT | NOT NULL, UNIQUE | Persisted library locator: repo/subpath for GitHub entries, absolute path for local entries |
+| `name` | TEXT | NOT NULL | Display name, usually from `.snipforge.json` |
+| `description` | TEXT | `''` | Library description |
+| `last_synced_at` | TEXT | NULL | Last successful sync/reindex time |
+| `last_synced_sha` | TEXT | NULL | Last successful sync marker/content hash |
+| `origin_url` | TEXT | NULL | Canonical Git origin URL when known |
+| `origin_ref` | TEXT | NULL | Preferred/default origin branch/ref when known |
 | `created_at` | TEXT | NOT NULL | ISO 8601 timestamp |
+| `manifest_path` | TEXT | NULL | Path to `.snipforge.json`; NULL means uninitialized/not yet materialized |
+| `type` | TEXT | `'github'` | `'github'` or `'local'` legacy storage discriminator |
+| `auto_sync` | INTEGER | `0` | Per-library auto-sync toggle |
+| `permission` | TEXT | `'consumer'` | `'owner'`, `'curator'`, or `'consumer'` |
+
+**Behavior notes**
+- `type = 'github'` no longer implies a subscription-only remote library UX; origin-backed libraries are still local working copies in the shipped model
+- `manifest_path IS NULL` means the library is linked but not initialized/materialized yet
+- `origin_url` and `origin_ref` hold origin metadata; they do not change command-row behavior directly
+- local-path and working-tree details are resolved from this stored metadata plus filesystem/git inspection
 
 ### auth
 
-Encrypted token storage. Tokens are encrypted via Electron's `safeStorage` API before writing.
+Encrypted token storage.
+
+Tokens are encrypted with Electron `safeStorage` before they are written.
 
 | Column | Type | Default | Description |
 |--------|------|---------|-------------|
-| `key` | TEXT | PK | Token identifier (e.g., `github_token`) |
+| `key` | TEXT | PK | Token identifier, e.g. `github_token` |
 | `value` | TEXT | NOT NULL | Encrypted token value |
+
+### settings
+
+Key-value application settings.
+
+| Column | Type | Default | Description |
+|--------|------|---------|-------------|
+| `key` | TEXT | PK | Setting identifier |
+| `value` | TEXT | NOT NULL | JSON-encoded or plain-string setting value |
 
 ---
 
 ## Migrations
 
-Migrations are inline in `database.ts:initializeDatabase()`. Each uses a try/catch `ALTER TABLE` pattern — if the column already exists, the error is silently caught. This is safe because SQLite's `ALTER TABLE ADD COLUMN` is idempotent in effect (fails if exists, no partial state).
+Migrations are inline in `database.ts:initializeDatabase()` using `ALTER TABLE ... ADD COLUMN` wrapped in try/catch. If a column already exists, SQLite throws and the migration is ignored.
 
-**Migration history:**
-1. `description` column on `commands` (v1 → v2)
-2. `language` column on `commands` (v2 → v3)
-3. `source`, `library_id`, `remote_path` columns on `commands` + `libraries` table + `auth` table (v3 → v4, Phase 1 Remote Libraries)
-4. `manifest_path` column on `libraries` (v4 → v5, Phase 3 Publishing)
-5. `type` column on `libraries` (v5 → v6, Phase 4 Local Libraries)
-6. `origin_url` / `origin_ref` columns on `libraries` (working-copy/origin metadata follow-up)
-7. `auto_sync` column on `libraries` (Settings Phase 2)
-8. `permission` column on `libraries` (Phase 5 Permissions)
+### Migration history
 
-When adding new columns, follow the same pattern: `ALTER TABLE ... ADD COLUMN` wrapped in try/catch, placed after the existing migrations in `initializeDatabase()`.
+1. `commands.description`
+2. `commands.language`
+3. `commands.source`, `commands.library_id`, `commands.remote_path`; `libraries` table; `auth` table
+4. `libraries.manifest_path`
+5. `libraries.type`
+6. `libraries.origin_url`, `libraries.origin_ref`
+7. `libraries.auto_sync`
+8. `libraries.permission`
+9. `settings` table
+
+When adding new persisted fields, append them in `initializeDatabase()` and update this doc in the same change.
 
 ---
 
-## TypeScript Types
+## Shared Type Contracts
 
-All types live in `shared/types.ts` and are shared between Main and Renderer processes.
+The stored schema is projected into types in `shared/types.ts`.
 
-| Type | Used for |
-|------|----------|
-| `Command` | Full command row from DB |
-| `CommandWithTags` | Command with pre-parsed `tagsArray` and `tagsNormalized` (renderer only) |
-| `CommandSource` | `'local' \| 'remote'` |
-| `Library` | Library subscription row |
-| `RemoteCommand` | Command as parsed from a repo JSON file (before DB insertion) |
-| `LibraryManifest` | `.snipforge.json` manifest contents |
-| `SyncResult` | Return value from sync operations: `{ added, updated, removed, errors }` |
-| `GitHubUser` | GitHub user info from auth |
-| `AuthStatus` | Auth state: `{ authenticated, user }` |
-| `DeviceFlowResponse` | GitHub Device Flow initial response |
+| Type | Role |
+|------|------|
+| `Command` | Indexed command row from SQLite |
+| `CommandWithTags` | Renderer-ready command with parsed tag helpers |
+| `CommandSource` | `'local' | 'remote'` compatibility discriminator for indexed rows |
+| `Library` | Derived app-level library contract used by renderer and IPC |
+| `LibraryOrigin` | Optional origin metadata on a library |
+| `LibraryWorkingCopyState` | Local working-copy materialization view |
+| `LibraryWorkingTreeStatus` | Library-level git/working-tree summary |
+| `LibraryCommand` | Canonical command file shape |
+| `RemoteCommand` | Legacy alias of `LibraryCommand`, retained for compatibility |
+| `LibraryManifest` | `.snipforge.json` manifest shape |
+| `SyncResult` | Sync/reindex result payload |
+| `GitHubUser` | Authenticated GitHub user info |
+| `AuthStatus` | Connector auth state |
+| `DeviceFlowResponse` | GitHub device-flow start response |
+
+---
+
+## Notes For Future Cleanup
+
+These names are intentionally not perfectly clean yet because compatibility still matters:
+
+- `github_repo` should be read as a persisted library locator, not literally only a GitHub repo name
+- `source = 'remote'` should be read as a library-backed indexed row, not as proof of the old remote-command product model
+- `RemoteCommand` is a legacy alias; prefer `LibraryCommand` in new code/docs
+
+Once the remaining migration/compatibility surface is removed, these names can be simplified in code and schema together.

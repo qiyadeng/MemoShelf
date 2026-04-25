@@ -35,12 +35,11 @@ Go templates (`{{.Name}}`), Handlebars (`{{#if}}`), and similar syntaxes are lef
 
 ## Libraries
 
-Libraries are collections of commands you can subscribe to and sync from GitHub.
+Libraries are local working copies of commands on disk. Some are local-only, and some are linked to a GitHub origin.
 
-To subscribe, paste a GitHub repo URL in Settings → Libraries. If the repo contains multiple libraries, you'll be asked to pick one.
+To add a GitHub-backed library, paste a repo URL in Settings → Libraries. If the repo contains multiple libraries, you'll be asked to pick one. You can also open a local folder as a library to load commands from `.json` files on disk.
 
-Sync pulls the latest commands from a subscribed library — manually or automatically (toggle per-library in Settings). You can also open a local folder as a library to load commands from `.json` files on disk.
-Commands from subscribed libraries show their source in the list, but row actions stay limited to copy, edit, and delete. Library-level sync and export live in Settings → Libraries.
+Sync refreshes a library's local working copy and index — manually or automatically (toggle per-library in Settings). Commands can show their library source in the list, but row actions stay limited to copy, edit, and delete. Library-level sync, export, and origin workflows live in Settings → Libraries.
 
 ## Export & Import
 

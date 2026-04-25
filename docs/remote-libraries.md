@@ -1,8 +1,35 @@
 # Remote Libraries
 
-Legacy note:
-- `docs/library-working-copies.md` is now the current source of truth for shipped library behavior
-- this doc remains useful as implementation history for the older subscription-style remote model and the migration work that followed
+## Archive Status
+
+This doc is **archived history**, not the current product reference.
+
+Use these docs instead:
+- `docs/library-working-copies.md` — current shipped library behavior and product language
+- `docs/library-first-command-storage.md` — storage model and migration status
+- `docs/schema.md` — current persisted schema and derived type contract
+
+What this doc still is:
+- implementation history for the older subscription-style remote-library model
+- migration context for understanding why compatibility names like `subscribe`, `source = 'remote'`, and `RemoteCommand` still exist in parts of the codebase
+
+What this doc is not:
+- a description of the current command UX
+- the source of truth for current library architecture
+- a reliable reference for active IPC/UI surfaces
+
+## Retention / Exit Criteria
+
+Keep this archived doc only while it still provides useful migration context.
+
+Delete or fold it into shorter historical notes once all of the following are true:
+- compatibility language around subscription-era workflows is no longer needed for onboarding or maintenance
+- remaining code aliases (`subscribe`, `RemoteCommand`, similar legacy naming) are removed or fully documented elsewhere
+- no active feature doc still needs this phase-by-phase remote-library history to explain the current architecture
+
+---
+
+The remainder of this file is preserved as legacy implementation history from the older remote-library model.
 
 Remote Libraries let teams share command snippets via GitHub repositories. A curator maintains a repo with command files, and team members subscribe to pull those commands into their local SnipForge.
 

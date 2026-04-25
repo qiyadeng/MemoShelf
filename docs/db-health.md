@@ -1,10 +1,10 @@
 # Database Health
 
-Lightweight health checks for the SnipForge SQLite database. The goal is preventive maintenance — catch issues early and keep the DB lean, especially as remote library sync generates churn.
+Lightweight health checks for the SnipForge SQLite database. The goal is preventive maintenance — catch issues early and keep the DB lean, especially as library reindex/sync churn generates derived-row cleanup.
 
 ## Motivation
 
-During Remote Libraries development, sync bugs left orphaned rows in the database (commands referencing deleted libraries, stale metadata). A manual VACUUM on a 1-command database reclaimed 89% of space (438KB → 48KB). As users subscribe to multiple large libraries, this churn will compound.
+During the remote-library and working-copy migration work, sync bugs left orphaned rows in the database (commands referencing deleted libraries, stale metadata). A manual VACUUM on a 1-command database reclaimed 89% of space (438KB → 48KB). As users add and resync multiple large libraries, this churn will compound.
 
 ## Scope
 
@@ -51,13 +51,13 @@ Final notes:
 
 Identify rows that shouldn't exist:
 
-- **Orphaned commands** — `source='remote'` with `library_id` not in `libraries` table
+- **Orphaned commands** — library-backed indexed rows (`source='remote'`) with `library_id` not in `libraries` table
 - **Ghost libraries** — libraries with no commands and no valid `github_repo` / folder path
 - **Dangling metadata** — `remote_path` set on local commands (should be NULL)
 
 ### 3. VACUUM
 
-Reclaim space after bulk operations (unsubscribe, sync with many deletions). SQLite doesn't auto-reclaim — deleted rows leave empty pages.
+Reclaim space after bulk operations (remove library, sync with many deletions). SQLite doesn't auto-reclaim — deleted rows leave empty pages.
 
 ### 4. Index Health
 

@@ -10,6 +10,20 @@ Library Working Copies reframes SnipForge around one simple rule: every command 
 
 ## Active Notes
 
+### Issue #55: reconcile library docs and retire stale remote-library references
+
+Plan:
+- make this doc the unambiguous current product reference for shipped library behavior
+- align the storage and schema docs around the same local-working-copy plus optional-origin model
+- mark `docs/remote-libraries.md` as archived migration history only, with explicit retention and deletion criteria
+- remove or rewrite doc language that still presents subscription-style remote commands, publish/unpublish rows, or the old Manage Commands surface as current behavior
+
+Final notes:
+- reaffirmed this doc as the product truth for current library workflows: every library is a local working copy, origins are library metadata, and command rows stay limited to copy/edit/delete
+- aligned `docs/library-first-command-storage.md` and `docs/schema.md` with the same model so storage, schema, and UX docs now describe one architecture instead of multiple eras at once
+- reduced `docs/remote-libraries.md` to an explicitly archived history doc and documented the exit criteria for eventually deleting it once the remaining compatibility language and migration context are no longer needed
+- cleaned up adjacent references in `src/assets/help.md`, `docs/codebase-map.md`, `docs/settings.md`, `docs/db-health.md`, and `docs/pending.md` so they no longer present subscription-era behavior as the shipped product model
+
 ### Issue #56: clean up legacy remote-library code after working-copy migration
 
 Plan:

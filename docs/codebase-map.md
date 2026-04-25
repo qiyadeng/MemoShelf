@@ -14,8 +14,8 @@ SnipForge/
 ├── electron/
 │   ├── main/
 │   │   ├── index.ts                 # Main process: window, tray, hotkey, all IPC handlers
-│   │   ├── database.ts              # SQLite via better-sqlite3: schema, migrations, CRUD
-│   │   └── github.ts                # GitHub OAuth device flow + remote library sync
+│   │   ├── database.ts              # SQLite via better-sqlite3: schema, migrations, derived index/cache + metadata
+│   │   └── github.ts                # GitHub OAuth device flow + origin-backed library working-copy flows
 │   ├── preload/
 │   │   └── index.ts                 # contextBridge: exposes window.electronAPI to renderer
 │   └── electron-env.d.ts            # Electron env type declarations
@@ -43,8 +43,8 @@ SnipForge/
 | File | Purpose |
 |------|---------|
 | `index.ts` | Creates BrowserWindow, system tray, registers global hotkey (`Cmd/Ctrl+Shift+Space`), defines all IPC handlers, manages app lifecycle (close-to-tray, single instance) |
-| `database.ts` | SQLite layer: initializes DB, runs migrations (ALTER TABLE for new columns), CRUD for commands/libraries/auth, batch sync transactions |
-| `github.ts` | GitHub Device Flow auth (start/poll), token encryption via `safeStorage`, GitHub REST API calls, library browse/subscribe/sync algorithm |
+| `database.ts` | SQLite layer: initializes DB, runs migrations, stores derived command index/cache plus library/auth/settings metadata, and performs batch sync transactions |
+| `github.ts` | GitHub Device Flow auth, token encryption via `safeStorage`, GitHub API calls, and origin-backed library working-copy clone/sync flows |
 
 ### Preload (`electron/preload/`)
 
@@ -56,7 +56,7 @@ SnipForge/
 
 | File | Purpose |
 |------|---------|
-| `types.ts` | Single source of truth for all interfaces: `Command`, `CommandWithTags`, `Library`, `RemoteCommand`, `LibraryManifest`, `SyncResult`, `GitHubUser`, `AuthStatus`, `CommandSource` |
+| `types.ts` | Shared contracts for indexed commands, libraries, working-copy/origin metadata, manifests, sync results, and auth state (`RemoteCommand` remains as a legacy alias of `LibraryCommand`) |
 
 ### Vue Components (`src/components/`)
 
@@ -66,12 +66,12 @@ SnipForge/
 | `CodeEditor.vue` | CodeMirror 6 wrapper for code languages; hot-swaps language via Compartment | No |
 | `MarkdownEditor.vue` | CodeMirror 6 markdown editor with Bold/Italic/Link toolbar | No |
 | `RichTextEditor.vue` | TipTap WYSIWYG (bold, lists, tasks, links, images) | No |
-| `SettingsModal.vue` | Two tabs: "Libraries" (GitHub auth + subscription management) and "Manage Commands" (bulk export/import/delete) | Yes: `auth.*`, `library.*`, `file.*` |
+| `SettingsModal.vue` | Settings surface for connectors, libraries, shortcuts, and library-scoped management/origin workflows | Yes: `auth.*`, `library.*`, `file.*` |
 | `DescriptionModal.vue` | Read-only markdown renderer for command descriptions | Yes: `shell.openExternal` |
 | `VariableInputModal.vue` | Dynamic form for `{{variable}}` placeholders before copy | No (emits to App.vue) |
 | `HelpModal.vue` | Renders `help.md` as sanitized HTML | No |
 | `DuplicateResolutionModal.vue` | Import conflict resolution: skip vs replace | No (emits to App.vue) |
-| `CommandList.vue` | Virtualized checkbox list (used in Manage Commands tab) | No |
+| `CommandList.vue` | Virtualized checkbox list used in library-scoped command management flows | No |
 | `TagSelector.vue` | Searchable tag picker with type-ahead filter | No |
 
 ### Utilities (`src/utils/`)
@@ -247,21 +247,27 @@ commands (
     description TEXT DEFAULT '',
     tags TEXT DEFAULT '[]',           -- JSON array of strings
     language TEXT DEFAULT 'plaintext',
-    source TEXT NOT NULL DEFAULT 'local',  -- 'local' | 'remote'
+    source TEXT NOT NULL DEFAULT 'local',  -- 'local' = legacy DB-only row, 'remote' = library-backed indexed row
     library_id INTEGER REFERENCES libraries(id) ON DELETE CASCADE,
-    remote_path TEXT,                 -- filename in repo, e.g. "get-pods.json"
+    remote_path TEXT,                 -- relative file path inside the owning library
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 )
 
--- Remote library subscriptions
+-- Library registry + sync/origin metadata
 libraries (
     id INTEGER PRIMARY KEY,
-    github_repo TEXT NOT NULL UNIQUE, -- "org/repo-name"
+    github_repo TEXT NOT NULL UNIQUE, -- repo/subpath for GitHub entries, absolute folder path for local entries
     name TEXT NOT NULL,
     description TEXT DEFAULT '',
     last_synced_at TEXT,
-    last_synced_sha TEXT,             -- commit SHA for change detection
+    last_synced_sha TEXT,
+    origin_url TEXT,
+    origin_ref TEXT,
+    manifest_path TEXT,
+    type TEXT NOT NULL DEFAULT 'github',
+    auto_sync INTEGER NOT NULL DEFAULT 0,
+    permission TEXT NOT NULL DEFAULT 'consumer',
     created_at TEXT NOT NULL
 )
 

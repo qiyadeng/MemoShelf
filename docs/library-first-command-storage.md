@@ -4,6 +4,18 @@ Library-First Command Storage makes libraries the default way commands exist in 
 
 ## Active Notes
 
+### Issue #55: reconcile library docs and retire stale remote-library references
+
+Plan:
+- keep this doc focused on storage and migration status rather than duplicating product UX guidance from `docs/library-working-copies.md`
+- replace subscription-era wording with current working-copy terminology where the shipped model has already changed
+- make the remaining legacy/compatibility states explicit so readers can tell what is current behavior versus migration baggage
+
+Final notes:
+- this doc now treats origin-backed libraries as local working copies with optional GitHub origins, not as a separate subscription-only command class
+- SQLite is documented consistently as index/cache plus app metadata, with legacy DB-only rows called out as upgrade compatibility rather than a normal storage path
+- retained legacy language only where it describes migration state or explicit compatibility behavior that still exists in code
+
 ### Issue #53: finish SQLite demotion for library-first command storage
 
 Plan:
@@ -74,14 +86,15 @@ The app should not start in a "DB-only commands with optional libraries later" s
 - **Search** runs against the SQLite index/cache, which is rebuilt or updated from files
 - **Library click** opens a library detail/management surface instead of treating command management as a global DB-only tab
 
-### Remote Libraries
+### Origin-Backed Libraries
 
-Remote libraries still exist, but they are not the default authoring surface.
+Libraries may have an optional GitHub origin, but the app still treats them as local working copies first.
 
 - Local writable libraries are file-backed and editable
-- Remote libraries are subscribed/read-only unless explicitly copied/forked into a writable local library
+- Origin-backed libraries are local working copies that may be read-only or blocked depending on ownership, materialization state, and Git context
+- Compatibility paths may still describe some migrated origin libraries as subscribed/read-only, but that is legacy wording, not the target product model
 
-This keeps the mental model clean: all commands belong to libraries, but not all libraries are writable.
+This keeps the mental model clean: all commands belong to local libraries on disk, and origin workflows are library-level behavior layered on top.
 
 ---
 
@@ -151,11 +164,11 @@ SQLite stores derived and app-level data:
 - contains command JSON files
 - all create/edit/delete operations write to this folder
 
-**Remote subscribed library**
-- backed by GitHub repo contents
-- read-only in the app by default
+**Origin-backed library working copy**
+- backed by a local folder on disk, optionally linked to a GitHub origin
+- may be writable, read-only, or blocked depending on role and working-copy health
 - commands are indexed locally for search and display
-- editing a remote command duplicates it into the default writable local library first
+- when an indexed read-only command cannot be edited in place, edit flows duplicate it into the default writable local library first
 
 #### Data Flow
 

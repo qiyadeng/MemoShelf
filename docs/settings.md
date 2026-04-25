@@ -64,8 +64,7 @@ The SettingsModal tabs:
 
 1. **General** — hotkey remapping, shortcuts, display prefs (themes, tag pills, preview on copy), window state
 2. **Connectors** — OAuth integrations (GitHub now, extensible for GitLab/Bitbucket/etc.)
-3. **Libraries** — subscriptions, sync controls, auto-sync toggle + interval
-4. **Manage Commands** — existing bulk operations, unchanged
+3. **Libraries** — local/opened libraries, GitHub-backed libraries, sync/origin controls, auto-sync toggle + interval, and library-scoped management entry points
 
 ---
 
@@ -92,8 +91,8 @@ The foundation. Adding new settings is now just a key in `DEFAULTS` + one UI ele
 - [x] Connected state shows user's GitHub avatar (circular), disconnected shows GitHub icon
 
 **Tab restructure:**
-- [x] General (first) → Connectors → Libraries → Manage Commands
-- [x] Libraries tab cleaned of OAuth, keeps subscriptions + sync controls
+- [x] General (first) → Connectors → Libraries
+- [x] Libraries tab cleaned of OAuth and now owns library sync controls plus entry points into library-scoped management
 
 **Key files:**
 - `electron/main/settings.ts` — NEW: settings CRUD
@@ -127,7 +126,7 @@ Unblocks parked ideas (tag pills, preview on copy). All in the General tab.
 
 ### Post-Phase Hardening
 
-#### Tag Filter Semantics In Manage Commands And Export (issue [#32](https://github.com/ArtluxDM/SnipForge/issues/32)) - Complete
+#### Tag Filter Semantics In Library Management And Export (issue [#32](https://github.com/ArtluxDM/SnipForge/issues/32)) - Complete
 
 Problem:
 The app currently uses different tag-filter semantics depending on where the user is looking. Browse and management flows use OR-style matching, while export filtering still runs through shared AND-style filtering. The export count preview in Settings also follows the old AND rule, so the UI can promise one result set and export another.
@@ -142,7 +141,7 @@ Implementation notes:
 - `src/utils/tags.ts` now owns the shared multi-tag rule through `matchesTagFilter()` and `filterCommandsByTags()`
 - `src/App.vue`, `src/components/SettingsModal.vue`, and `src/components/BulkPublishModal.vue` now all use the same matching path
 - Matching was tightened to exact normalized tags rather than substring contains, so selecting `docker` no longer silently matches `docker-compose`
-- The Manage Commands export count now uses the same shared filter as the export itself, removing preview/export drift
+- The library-management export count now uses the same shared filter as the export itself, removing preview/export drift
 
 Verification:
 - `pnpm exec vue-tsc --noEmit`
