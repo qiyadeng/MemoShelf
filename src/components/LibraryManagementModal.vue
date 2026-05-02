@@ -6,12 +6,7 @@
           <div class="library-management-title-row">
             <h3>{{ library.name }}</h3>
             <div class="library-state-badges">
-              <span
-                v-for="badge in headerBadges"
-                :key="badge.label"
-                class="library-state-badge"
-                :class="badge.tone"
-              >
+              <span v-for="badge in headerBadges" :key="badge.label" class="library-state-badge" :class="badge.tone">
                 {{ badge.label }}
               </span>
             </div>
@@ -22,28 +17,15 @@
 
         <div class="library-management-header-controls">
           <div class="library-header-actions">
-            <button
-              class="library-action-btn subtle"
-              @click="$emit('refresh')"
-              :disabled="syncing"
-              title="Refresh library status"
-            >
+            <button class="library-action-btn subtle" @click="$emit('refresh')" :disabled="syncing"
+              title="Refresh library status">
               Refresh
             </button>
-            <button
-              v-if="changesSummary.canSync"
-              @click="$emit('sync', library.id)"
-              class="library-action-btn subtle"
-              :disabled="syncing"
-              :title="changesSummary.syncTitle"
-            >
+            <button v-if="changesSummary.canSync" @click="$emit('sync', library.id)" class="library-action-btn subtle"
+              :disabled="syncing" :title="changesSummary.syncTitle">
               {{ syncing ? 'Syncing...' : 'Sync' }}
             </button>
-            <button
-              v-if="canImportIntoManagedLibrary"
-              @click="$emit('import')"
-              class="action-button import-button"
-            >
+            <button v-if="canImportIntoManagedLibrary" @click="$emit('import')" class="action-button import-button">
               Import
             </button>
           </div>
@@ -67,21 +49,12 @@
                   <circle cx="11" cy="11" r="8"></circle>
                   <path d="m21 21-4.35-4.35"></path>
                 </svg>
-                <input
-                  v-model.trim="searchQuery"
-                  type="text"
-                  placeholder="Search title, body, description, or tags"
-                />
+                <input v-model.trim="searchQuery" type="text" placeholder="Search title, body, description, or tags" />
               </label>
 
               <label class="selection-summary" :class="{ 'selection-summary--active': hasSelection }">
-                <input
-                  type="checkbox"
-                  class="select-all-checkbox"
-                  :checked="isAllSelected"
-                  :indeterminate="isIndeterminate"
-                  @change="toggleSelectAll"
-                />
+                <input type="checkbox" class="select-all-checkbox" :checked="isAllSelected"
+                  :indeterminate="isIndeterminate" @change="toggleSelectAll" />
                 <div class="selection-copy">
                   <span class="selection-count">{{ selectionSummaryTitle }}</span>
                   <span class="selection-subcopy">{{ selectionSummaryDetail }}</span>
@@ -92,39 +65,31 @@
             <div class="command-toolbar-actions">
               <div class="command-toolbar-left">
                 <div class="filter-dropdown-wrap" @click.stop>
-                  <button
-                    @click="toggleManagementFilterDropdown"
+                  <button @click="toggleManagementFilterDropdown"
                     :class="['toolbar-filter-button', { active: selectedManagementTags.length > 0 }]"
-                    title="Filter by tags"
-                  >
+                    title="Filter by tags">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <polygon points="22,3 2,3 10,12.46 10,19 14,21 14,12.46"></polygon>
                     </svg>
                     <span>Tags</span>
-                    <span v-if="selectedManagementTags.length > 0" class="toolbar-filter-count">{{ selectedManagementTags.length }}</span>
+                    <span v-if="selectedManagementTags.length > 0" class="toolbar-filter-count">{{
+                      selectedManagementTags.length }}</span>
                   </button>
 
                   <div v-if="showManagementFilterDropdown" class="filter-dropdown">
-                    <TagSelector
-                      :available-tags="availableTags"
-                      :selected-tags="selectedManagementTags"
-                      title="Filter by Tags"
-                      @toggle="toggleManagementTag"
-                      @clear-all="clearManagementTags"
-                    />
+                    <TagSelector :available-tags="availableTags" :selected-tags="selectedManagementTags"
+                      title="Filter by Tags" @toggle="toggleManagementTag" @clear-all="clearManagementTags" />
                   </div>
                 </div>
               </div>
 
               <div class="command-toolbar-right">
                 <div class="export-dropdown-wrap" @click.stop>
-                  <button
-                    @click="toggleExportDropdown"
-                    :disabled="selectedCommandIds.length === 0"
-                    class="action-button export-button"
-                  >
+                  <button @click="toggleExportDropdown" :disabled="selectedCommandIds.length === 0"
+                    class="action-button export-button">
                     Export
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round">
                       <path d="m6 9 6 6 6-6"></path>
                     </svg>
                   </button>
@@ -134,13 +99,9 @@
                   </div>
                 </div>
 
-                <button
-                  v-if="canDeleteManagedCommands"
-                  @click="handleBulkDelete"
-                  :disabled="selectedCommandIds.length === 0"
-                  class="action-button delete-button"
-                  title="Delete selected commands"
-                >
+                <button v-if="canDeleteManagedCommands" @click="handleBulkDelete"
+                  :disabled="selectedCommandIds.length === 0" class="action-button delete-button"
+                  title="Delete selected commands">
                   Delete Selected
                 </button>
               </div>
@@ -148,13 +109,8 @@
           </div>
 
           <div class="command-list-shell">
-            <CommandList
-              :commands="filteredManagementCommands"
-              :selected-ids="selectedCommandIds"
-              :empty-title="emptyState.title"
-              :empty-message="emptyState.message"
-              @toggle="toggleCommandSelection"
-            />
+            <CommandList :commands="filteredManagementCommands" :selected-ids="selectedCommandIds"
+              :empty-title="emptyState.title" :empty-message="emptyState.message" @toggle="toggleCommandSelection" />
           </div>
         </section>
 
@@ -208,10 +164,8 @@
               <span class="detail-value" :class="`detail-value--${changesSummary.tone}`">{{ workingTreeLabel }}</span>
               <span class="detail-meta">{{ workingTreeDetail }}</span>
             </div>
-            <div
-              v-if="library.working_tree.state === 'dirty' || library.working_tree.state === 'clean'"
-              class="detail-card"
-            >
+            <div v-if="library.working_tree.state === 'dirty' || library.working_tree.state === 'clean'"
+              class="detail-card">
               <span class="detail-label">File summary</span>
               <div class="library-change-counts">
                 <span class="library-change-count"><strong>{{ library.working_tree.modified }}</strong> modified</span>
@@ -252,62 +206,43 @@
             </div>
 
             <div class="workflow-actions">
-              <button
-                v-if="library.working_tree.state === 'not_repo'"
-                class="library-action-btn subtle"
-                :disabled="!!workflowBusy"
-                title="Choose the real git-backed folder for this library"
-                @click="$emit('relink')"
-              >
+              <button v-if="library.working_tree.state === 'not_repo'" class="library-action-btn subtle"
+                :disabled="!!workflowBusy" title="Choose the real git-backed folder for this library"
+                @click="$emit('relink')">
                 {{ workflowBusy === 'relink' ? 'Relinking...' : 'Relink Working Copy' }}
               </button>
-              <button
-                class="library-action-btn subtle"
+              <button class="library-action-btn subtle"
                 :disabled="!!workflowBusy || !workflowActionState.fetch.available"
-                :title="workflowActionState.fetch.reason || 'Fetch origin refs'"
-                @click="$emit('fetch-origin')"
-              >
+                :title="workflowActionState.fetch.reason || 'Fetch origin refs'" @click="$emit('fetch-origin')">
                 {{ workflowBusy === 'fetch' ? 'Fetching...' : 'Fetch' }}
               </button>
-              <button
-                class="library-action-btn subtle"
+              <button class="library-action-btn subtle"
                 :disabled="!!workflowBusy || !workflowActionState.update.available"
                 :title="workflowActionState.update.reason || 'Fast-forward this working copy from origin'"
-                @click="$emit('update-origin')"
-              >
+                @click="$emit('update-origin')">
                 {{ workflowBusy === 'update' ? 'Updating...' : 'Update' }}
               </button>
-              <button
-                class="library-action-btn subtle"
+              <button class="library-action-btn subtle"
                 :disabled="!!workflowBusy || !workflowActionState.commit.available"
                 :title="workflowActionState.commit.reason || 'Commit local changes in this library'"
-                @click="$emit('commit')"
-              >
+                @click="$emit('commit')">
                 {{ workflowBusy === 'commit' ? 'Committing...' : 'Commit' }}
               </button>
-              <button
-                class="library-action-btn subtle"
+              <button class="library-action-btn subtle"
                 :disabled="!!workflowBusy || !workflowActionState.push.available"
-                :title="workflowActionState.push.reason || 'Push the current branch to origin'"
-                @click="$emit('push')"
-              >
+                :title="workflowActionState.push.reason || 'Push the current branch to origin'" @click="$emit('push')">
                 {{ workflowBusy === 'push' ? 'Pushing...' : 'Push' }}
               </button>
-              <button
-                class="library-action-btn subtle"
+              <button class="library-action-btn subtle"
                 :disabled="!!workflowBusy || !workflowActionState.pull_request.available"
                 :title="workflowActionState.pull_request.reason || 'Open a pull request from this branch'"
-                @click="$emit('pull-request')"
-              >
+                @click="$emit('pull-request')">
                 {{ workflowBusy === 'pull_request' ? 'Opening...' : 'Pull Request' }}
               </button>
             </div>
 
-            <p
-              v-if="workflowActionNote"
-              class="workflow-copy"
-              :class="{ 'workflow-copy--warning': !!workflowSummaryReason }"
-            >
+            <p v-if="workflowActionNote" class="workflow-copy"
+              :class="{ 'workflow-copy--warning': !!workflowSummaryReason }">
               {{ workflowActionNote }}
             </p>
           </div>
@@ -580,7 +515,7 @@ const hasSelection = computed(() => selectedCommandIds.value.length > 0)
 const selectionSummaryTitle = computed(() => {
   return hasSelection.value
     ? `${selectedCommandIds.value.length} selected`
-    : 'Bulk select'
+    : 'select all'
 })
 const selectionSummaryDetail = computed(() => {
   const visibleCount = filteredManagementCommands.value.length
@@ -1106,7 +1041,7 @@ watch(filteredManagementCommands, commands => {
   background: var(--bg-hover);
 }
 
-.export-dropdown-item + .export-dropdown-item {
+.export-dropdown-item+.export-dropdown-item {
   border-top: 1px solid var(--border);
 }
 
@@ -1324,6 +1259,7 @@ watch(filteredManagementCommands, commands => {
 }
 
 @media (max-width: 640px) {
+
   .library-management-modal-header,
   .library-management-modal-body {
     padding: 16px;
