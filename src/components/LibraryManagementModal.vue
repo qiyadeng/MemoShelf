@@ -1,6 +1,10 @@
 <template>
-  <div v-if="show && library" class="library-management-modal-overlay" @click.self="handleClose">
-    <div class="library-management-modal" @click="closeDropdowns">
+  <div
+    v-if="show && library"
+    :class="['library-management-modal-overlay', { 'library-management-modal-overlay--embedded': embedded }]"
+    @click.self="handleBackdropClick"
+  >
+    <div :class="['library-management-modal', { 'library-management-modal--embedded': embedded }]" @click="closeDropdowns">
       <div class="library-management-modal-header">
         <div class="library-management-header-main">
           <div class="library-management-title-row">
@@ -12,16 +16,19 @@
             </div>
           </div>
           <p class="library-management-path">{{ displayPath }}</p>
-          <p class="library-management-note">{{ managementContextNote }}</p>
+          <p v-if="!embedded" class="library-management-note">{{ managementContextNote }}</p>
         </div>
 
         <div class="library-management-header-controls">
           <div class="library-header-actions">
+            <button v-if="embedded" class="library-action-btn subtle workspace-back-button" @click="handleClose" title="Back to libraries">
+              ← Libraries
+            </button>
             <button class="library-action-btn subtle" @click="$emit('refresh')" :disabled="syncing"
               title="Refresh library status">
               Refresh
             </button>
-            <button v-if="changesSummary.canSync" @click="$emit('sync', library.id)" class="library-action-btn subtle"
+            <button v-if="changesSummary.canSync" @click="$emit('sync', library.id)" class="library-action-btn subtle library-action-btn--primary"
               :disabled="syncing" :title="changesSummary.syncTitle">
               {{ syncing ? 'Syncing...' : 'Sync' }}
             </button>
@@ -29,12 +36,12 @@
               Import
             </button>
           </div>
-          <button class="library-management-close" @click="handleClose" aria-label="Close library management">×</button>
+          <button v-if="!embedded" class="library-management-close" @click="handleClose" aria-label="Close library management">×</button>
         </div>
       </div>
 
       <div class="library-management-modal-body">
-        <section class="management-section">
+        <section class="management-section management-section--commands">
           <div class="section-header-row section-header-row--commands">
             <div>
               <h4>Commands</h4>
@@ -86,7 +93,7 @@
               <div class="command-toolbar-right">
                 <div class="export-dropdown-wrap" @click.stop>
                   <button @click="toggleExportDropdown" :disabled="selectedCommandIds.length === 0"
-                    class="action-button export-button">
+                    :class="['action-button', 'export-button', { 'action-button--ready': hasSelection }]">
                     Export
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                       stroke-linecap="round" stroke-linejoin="round">
@@ -114,7 +121,7 @@
           </div>
         </section>
 
-        <section class="management-section">
+        <section class="management-section management-section--summary">
           <div class="section-header-row">
             <div>
               <h4>Library</h4>
@@ -145,7 +152,7 @@
           <p class="section-guidance">{{ overviewGuidance }}</p>
         </section>
 
-        <section class="management-section">
+        <section class="management-section management-section--status">
           <div class="section-header-row">
             <div>
               <h4>Library status</h4>
@@ -176,7 +183,7 @@
           </div>
         </section>
 
-        <details v-if="library.origin" class="workflow-disclosure">
+        <details v-if="library.origin" class="workflow-disclosure management-section management-section--workflow">
           <summary class="workflow-disclosure-summary">
             <span>Origin workflow</span>
             <span class="workflow-disclosure-copy">Git and remote actions for this library</span>
@@ -249,6 +256,9 @@
         </details>
       </div>
 
+      <div v-if="errorMessage" class="sync-message error">
+        {{ errorMessage }}
+      </div>
       <div v-if="feedbackMessage" class="sync-message" :class="feedbackMessageType">
         {{ feedbackMessage }}
       </div>
@@ -282,6 +292,7 @@ interface ManagedCommand {
 
 interface Props {
   show: boolean
+  embedded?: boolean
   library: Library | null
   defaultWritableLibrary: Library | null
   commands: ManagedCommand[]
@@ -291,6 +302,7 @@ interface Props {
   workflowBusy: null | 'fetch' | 'update' | 'relink' | 'commit' | 'push' | 'pull_request'
   feedbackMessage: string
   feedbackMessageType: 'success' | 'error'
+  errorMessage?: string
 }
 
 const props = defineProps<Props>()
@@ -555,6 +567,12 @@ function handleClose() {
   emit('close')
 }
 
+function handleBackdropClick() {
+  if (!props.embedded) {
+    handleClose()
+  }
+}
+
 function toggleManagementFilterDropdown() {
   showManagementFilterDropdown.value = !showManagementFilterDropdown.value
 }
@@ -638,6 +656,17 @@ watch(filteredManagementCommands, commands => {
   padding: 16px;
 }
 
+.library-management-modal-overlay--embedded {
+  position: static;
+  inset: auto;
+  z-index: auto;
+  background: none;
+  display: block;
+  padding: 0;
+  min-height: 0;
+  height: 100%;
+}
+
 .library-management-modal {
   width: 90vw;
   max-width: 600px;
@@ -649,6 +678,15 @@ watch(filteredManagementCommands, commands => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  box-sizing: border-box;
+}
+
+.library-management-modal--embedded {
+  width: 100%;
+  max-width: none;
+  max-height: none;
+  height: 100%;
+  box-shadow: none;
 }
 
 .library-management-modal-header {
@@ -659,6 +697,13 @@ watch(filteredManagementCommands, commands => {
   padding: 20px 24px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  background: color-mix(in srgb, var(--bg-elevated) 94%, transparent);
+}
+
+.library-management-modal--embedded .library-management-modal-header {
+  border-radius: 14px 14px 0 0;
+  padding: 16px 20px 14px;
+  gap: 14px;
 }
 
 .library-management-header-main {
@@ -672,6 +717,10 @@ watch(filteredManagementCommands, commands => {
   flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 8px;
+}
+
+.library-management-modal--embedded .library-management-title-row {
+  margin-bottom: 6px;
 }
 
 .library-management-title-row h3 {
@@ -717,6 +766,11 @@ watch(filteredManagementCommands, commands => {
   font-size: 12px;
   font-family: monospace;
   word-break: break-all;
+}
+
+.library-management-modal--embedded .library-management-path {
+  margin-bottom: 0;
+  font-size: 11px;
 }
 
 .library-management-note {
@@ -766,19 +820,31 @@ watch(filteredManagementCommands, commands => {
   padding: 24px;
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 18px;
   overflow-y: auto;
   min-height: 0;
+  background: color-mix(in srgb, var(--bg-elevated) 90%, transparent);
+}
+
+.library-management-modal--embedded .library-management-modal-body {
+  padding: 20px;
+  gap: 16px;
 }
 
 .management-section {
-  padding-bottom: 24px;
-  border-bottom: 1px solid var(--border);
+  min-width: 0;
 }
 
-.management-section:last-of-type {
-  padding-bottom: 0;
-  border-bottom: none;
+.management-section:not(.management-section--workflow) {
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg-input) 96%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 2%, transparent);
+}
+
+.library-management-modal--embedded .management-section:not(.management-section--workflow) {
+  padding: 16px;
 }
 
 .section-header-row {
@@ -823,6 +889,10 @@ watch(filteredManagementCommands, commands => {
 .selection-summary--active {
   background: color-mix(in srgb, var(--accent) 10%, var(--bg-input));
   border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+}
+
+.workspace-back-button {
+  border-color: color-mix(in srgb, var(--accent) 20%, var(--border));
 }
 
 .selection-copy {
@@ -986,6 +1056,17 @@ watch(filteredManagementCommands, commands => {
   color: var(--text-primary);
 }
 
+.library-action-btn--primary {
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-surface));
+  color: var(--text-primary);
+}
+
+.library-action-btn--primary:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 54%, var(--border-hover));
+  background: color-mix(in srgb, var(--accent) 18%, var(--bg-hover));
+}
+
 .toolbar-filter-button.active {
   background: color-mix(in srgb, var(--accent) 14%, var(--bg-surface));
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
@@ -1053,7 +1134,8 @@ watch(filteredManagementCommands, commands => {
   color: var(--text-tertiary);
 }
 
-.import-button {
+.import-button,
+.action-button--ready {
   border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
   background: color-mix(in srgb, var(--accent) 12%, var(--bg-surface));
   color: var(--text-primary);
@@ -1076,6 +1158,10 @@ watch(filteredManagementCommands, commands => {
   min-height: 220px;
 }
 
+.library-management-modal--embedded .command-list-shell {
+  height: clamp(260px, 38vh, 420px);
+}
+
 .overview-grid,
 .details-grid {
   display: grid;
@@ -1091,8 +1177,13 @@ watch(filteredManagementCommands, commands => {
   padding: 14px;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: var(--bg-input);
+  background: color-mix(in srgb, var(--bg-surface) 84%, var(--bg-input));
   min-width: 0;
+}
+
+.management-section--summary .overview-stat:first-child,
+.management-section--status .detail-card:first-child {
+  border-color: color-mix(in srgb, var(--accent) 22%, var(--border));
 }
 
 .detail-label {
@@ -1148,8 +1239,8 @@ watch(filteredManagementCommands, commands => {
 
 .workflow-disclosure {
   border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--bg-input);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg-input) 96%, transparent);
   overflow: hidden;
 }
 
@@ -1223,6 +1314,24 @@ watch(filteredManagementCommands, commands => {
   .library-management-modal {
     width: calc(100vw - 16px);
     max-height: calc(100vh - 16px);
+  }
+
+  .library-management-modal-body {
+    padding: 18px;
+  }
+
+  .library-management-modal--embedded .library-management-modal-header {
+    padding: 14px 16px 12px;
+  }
+
+  .library-management-modal--embedded .library-management-modal-body {
+    padding: 16px;
+    gap: 14px;
+  }
+
+  .library-management-modal--embedded {
+    width: 100%;
+    max-height: none;
   }
 
   .library-management-modal-header,

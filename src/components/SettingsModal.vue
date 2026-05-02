@@ -1,6 +1,6 @@
 <template>
   <div v-if="show" class="modal-overlay" @click.self="$emit('cancel')">
-    <div class="modal-content" @click="closeAllDropdowns">
+    <div class="modal-content" :class="{ 'modal-content--libraries-workspace': activeTab === 'libraries' && !!managedLibrary }" @click="closeAllDropdowns">
       <!-- Tab Navigation with close button -->
       <div class="tab-navigation">
         <div class="tabs">
@@ -29,7 +29,7 @@
         <button class="close-button" @click="$emit('cancel')">×</button>
       </div>
 
-      <div class="modal-body">
+      <div class="modal-body" :class="{ 'modal-body--libraries-workspace': activeTab === 'libraries' && !!managedLibrary }">
 
         <!-- Tab 1: General -->
         <div v-if="activeTab === 'general'" class="general-tab">
@@ -253,12 +253,45 @@
         </div>
 
         <!-- Tab 3: Remote Libraries -->
-        <div v-if="activeTab === 'libraries'" class="libraries-tab">
-          <!-- Library Subscriptions Section -->
-          <div class="settings-section">
+        <div v-if="activeTab === 'libraries'" class="libraries-tab" :class="{ 'libraries-tab--workspace': !!managedLibrary }">
+          <LibraryManagementModal
+            v-if="managedLibrary"
+            :show="true"
+            :embedded="true"
+            :library="managedLibrary"
+            :default-writable-library="defaultWritableLibrary"
+            :commands="managedLibraryCommands"
+            :syncing="syncing"
+            :workflow-summary="managedLibraryWorkflowSummary"
+            :workflow-error="managedLibraryWorkflowError"
+            :workflow-busy="managedWorkflowBusy"
+            :feedback-message="syncMessage"
+            :feedback-message-type="syncMessageType"
+            :error-message="libraryError"
+            @close="closeLibraryManagement"
+            @refresh="handleRefreshManagedLibrary"
+            @sync="handleSyncLibrary"
+            @fetch-origin="handleFetchOrigin"
+            @update-origin="handleUpdateFromOrigin"
+            @relink="handleRelinkWorkingCopy"
+            @commit="handleCommitLibraryChanges"
+            @push="handlePushLibraryChanges"
+            @pull-request="handleOpenLibraryPullRequest"
+            @import="handleImport"
+            @bulk-delete="emit('bulk-delete', $event)"
+            @bulk-export="emit('bulk-export', $event)"
+            @export-library="openExportLibraryModal"
+          />
+
+          <div v-else class="settings-section settings-section--libraries">
             <!-- Section header: title + sync all -->
-            <div class="section-header-row">
-              <h3>Libraries</h3>
+            <div class="section-header-row section-header-row--libraries">
+              <div>
+                <h3>Libraries</h3>
+                <p class="section-description section-description--compact">
+                  Add working copies, choose the default writable folder, and open a focused management workspace when you need to clean up commands.
+                </p>
+              </div>
               <div class="section-header-actions">
                 <button
                   v-if="libraries.length > 0"
@@ -275,21 +308,42 @@
                 </button>
               </div>
             </div>
-            <!-- Auto-sync row -->
-            <div class="auto-sync-row">
-              <div class="auto-sync-left">
-                <span class="auto-sync-label">Auto-sync</span>
-                <button
-                  class="toggle-switch toggle-switch--small"
-                  :class="{ on: autoSyncEnabled }"
-                  @click="toggleAutoSync"
-                  role="switch"
-                  :aria-checked="autoSyncEnabled"
-                >
-                  <span class="toggle-knob" />
-                </button>
+
+            <div class="libraries-overview-bar">
+              <div class="auto-sync-row auto-sync-row--panel">
+                <div class="auto-sync-left">
+                  <span class="auto-sync-label">Auto-sync</span>
+                  <button
+                    class="toggle-switch toggle-switch--small"
+                    :class="{ on: autoSyncEnabled }"
+                    @click="toggleAutoSync"
+                    role="switch"
+                    :aria-checked="autoSyncEnabled"
+                  >
+                    <span class="toggle-knob" />
+                  </button>
+                </div>
+                <span class="last-synced-text">Last synced: {{ lastSyncedDisplay }}</span>
               </div>
-              <span class="last-synced-text">Last synced: {{ lastSyncedDisplay }}</span>
+
+              <div class="libraries-stats-grid">
+                <div class="library-stat-chip">
+                  <span class="library-stat-chip__label">Libraries</span>
+                  <strong>{{ libraries.length }}</strong>
+                </div>
+                <div class="library-stat-chip">
+                  <span class="library-stat-chip__label">Initialized</span>
+                  <strong>{{ initializedLibrariesCount }}</strong>
+                </div>
+                <div class="library-stat-chip">
+                  <span class="library-stat-chip__label">Writable</span>
+                  <strong>{{ writableLibrariesCount }}</strong>
+                </div>
+                <div class="library-stat-chip">
+                  <span class="library-stat-chip__label">Commands</span>
+                  <strong>{{ totalLibraryCommands }}</strong>
+                </div>
+              </div>
             </div>
 
             <div class="default-library-row">
@@ -316,36 +370,47 @@
             <p v-if="defaultLibraryError" class="library-error">{{ defaultLibraryError }}</p>
 
             <!-- Add library controls -->
-            <div class="add-library-row">
-              <!-- Subscribe to GitHub repo -->
-              <div v-if="authStatus.authenticated" class="subscribe-form">
-                <input
-                  v-model="newRepoUrl"
-                  type="text"
-                  class="repo-input"
-                  placeholder="owner/repo or GitHub URL"
-                  @keydown.enter="handleSubscribe"
-                  :disabled="subscribing"
-                />
+            <div class="library-intake-panel">
+              <div class="library-intake-copy">
+                <span class="default-library-label">Add a library</span>
+                <p class="section-description section-description--compact">
+                  Open a local folder for direct editing, or subscribe to a GitHub-backed repo when you want to track a shared source.
+                </p>
+              </div>
+              <div class="add-library-row">
+                <!-- Subscribe to GitHub repo -->
+                <div v-if="authStatus.authenticated" class="subscribe-form">
+                  <input
+                    v-model="newRepoUrl"
+                    type="text"
+                    class="repo-input"
+                    placeholder="owner/repo or GitHub URL"
+                    @keydown.enter="handleSubscribe"
+                    :disabled="subscribing"
+                  />
+                  <button
+                    @click="handleSubscribe"
+                    class="subscribe-button"
+                    :disabled="subscribing || !newRepoUrl.trim()"
+                  >
+                    {{ subscribing ? 'Adding...' : 'Subscribe' }}
+                  </button>
+                </div>
+                <div v-else class="subscribe-disabled-hint">
+                  Connect GitHub in the Connectors tab to subscribe to remote libraries.
+                </div>
+                <!-- Open local folder -->
                 <button
-                  @click="handleSubscribe"
-                  class="subscribe-button"
-                  :disabled="subscribing || !newRepoUrl.trim()"
+                  @click="handleOpenLocalFolder"
+                  class="open-folder-button open-folder-button--strong"
+                  :disabled="subscribing"
                 >
-                  {{ subscribing ? 'Adding...' : 'Subscribe' }}
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                  </svg>
+                  Open Folder
                 </button>
               </div>
-              <!-- Open local folder -->
-              <button
-                @click="handleOpenLocalFolder"
-                class="open-folder-button"
-                :disabled="subscribing"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                </svg>
-                Open Folder
-              </button>
             </div>
 
             <!-- Error message -->
@@ -452,32 +517,6 @@
 
       </div>
     </div>
-
-    <LibraryManagementModal
-      :show="!!managedLibrary"
-      :library="managedLibrary"
-      :default-writable-library="defaultWritableLibrary"
-      :commands="managedLibraryCommands"
-      :syncing="syncing"
-      :workflow-summary="managedLibraryWorkflowSummary"
-      :workflow-error="managedLibraryWorkflowError"
-      :workflow-busy="managedWorkflowBusy"
-      :feedback-message="syncMessage"
-      :feedback-message-type="syncMessageType"
-      @close="closeLibraryManagement"
-      @refresh="handleRefreshManagedLibrary"
-      @sync="handleSyncLibrary"
-      @fetch-origin="handleFetchOrigin"
-      @update-origin="handleUpdateFromOrigin"
-      @relink="handleRelinkWorkingCopy"
-      @commit="handleCommitLibraryChanges"
-      @push="handlePushLibraryChanges"
-      @pull-request="handleOpenLibraryPullRequest"
-      @import="handleImport"
-      @bulk-delete="emit('bulk-delete', $event)"
-      @bulk-export="emit('bulk-export', $event)"
-      @export-library="openExportLibraryModal"
-    />
 
     <!-- Library Picker Modal -->
     <div v-if="libraryPicker.visible" class="init-modal-overlay" @click.self="closeLibraryPicker">
@@ -992,6 +1031,15 @@ const libraryCommandCounts = computed(() => {
     counts.set(command.library_id, (counts.get(command.library_id) || 0) + 1)
   }
   return counts
+})
+const initializedLibrariesCount = computed(() => libraries.value.filter(lib => !!lib.manifest_path).length)
+const writableLibrariesCount = computed(() => libraries.value.filter(lib => isWritableLocalLibrary(lib)).length)
+const totalLibraryCommands = computed(() => {
+  let total = 0
+  for (const count of libraryCommandCounts.value.values()) {
+    total += count
+  }
+  return total
 })
 const managedLibraryCommands = computed(() => {
   if (!managedLibrary.value) return []
@@ -2058,13 +2106,27 @@ const closeAllDropdowns = () => {
 </script>
 
 <style scoped>
-/* Override modal-body for tabs */
+/* Override modal sizing/body for Settings */
+.modal-content {
+  width: min(94vw, 660px);
+  max-width: 660px;
+}
+
+.modal-content--libraries-workspace {
+  width: min(96vw, 760px);
+  max-width: 760px;
+}
+
 .modal-body {
   padding: 24px;
   display: flex;
   flex-direction: column;
   height: calc(90vh - 100px);
   overflow: hidden;
+}
+
+.modal-body--libraries-workspace {
+  padding: 20px;
 }
 
 /* Component-specific styles */
@@ -2967,6 +3029,17 @@ const closeAllDropdowns = () => {
 .libraries-tab {
   flex: 1;
   overflow-y: auto;
+  min-height: 0;
+}
+
+.libraries-tab--workspace {
+  overflow: hidden;
+}
+
+.settings-section--libraries {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 /* Section header row */
@@ -2975,6 +3048,11 @@ const closeAllDropdowns = () => {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 4px;
+}
+
+.section-header-row--libraries {
+  align-items: flex-start;
+  margin-bottom: 0;
 }
 
 .section-header-row h3 {
@@ -2999,6 +3077,11 @@ const closeAllDropdowns = () => {
   padding: 0 2px;
 }
 
+.auto-sync-row--panel {
+  margin-bottom: 0;
+  padding: 0;
+}
+
 .auto-sync-left {
   display: flex;
   align-items: center;
@@ -3016,16 +3099,57 @@ const closeAllDropdowns = () => {
   color: var(--text-muted);
 }
 
+.libraries-overview-bar,
+.default-library-row,
+.library-intake-panel {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg-elevated) 88%, transparent);
+}
+
+.libraries-overview-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.libraries-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.library-stat-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+  background: color-mix(in srgb, var(--bg-input) 92%, transparent);
+}
+
+.library-stat-chip strong {
+  font-size: 18px;
+  color: var(--text-primary);
+}
+
+.library-stat-chip__label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
 .default-library-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 16px;
-  padding: 14px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--bg-elevated) 88%, transparent);
+  margin-bottom: 0;
 }
 
 .default-library-copy {
@@ -3051,6 +3175,36 @@ const closeAllDropdowns = () => {
 
 .default-library-value.muted {
   color: var(--text-tertiary);
+}
+
+.section-description--compact {
+  margin-bottom: 0;
+}
+
+.library-intake-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.library-intake-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.subscribe-disabled-hint {
+  flex: 1;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  line-height: 1.5;
+  background: color-mix(in srgb, var(--bg-input) 86%, transparent);
 }
 
 /* Library name row with auto-sync toggle */
@@ -3363,11 +3517,17 @@ const closeAllDropdowns = () => {
   margin-bottom: 16px;
 }
 
+.subscribe-form,
+.add-library-row .subscribe-form {
+  min-width: 0;
+}
+
 .repo-input {
   flex: 1;
-  padding: 8px 12px;
+  min-width: 0;
+  padding: 10px 12px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 10px;
   background: var(--bg-input);
   color: var(--text-primary);
   font-size: 13px;
@@ -3383,13 +3543,13 @@ const closeAllDropdowns = () => {
 }
 
 .subscribe-button {
-  padding: 8px 16px;
+  padding: 10px 16px;
   background: var(--accent);
   border: none;
-  border-radius: 6px;
+  border-radius: 10px;
   color: var(--text-primary);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   transition: background 0.2s;
   white-space: nowrap;
@@ -3406,9 +3566,9 @@ const closeAllDropdowns = () => {
 
 .add-library-row {
   display: flex;
-  gap: 8px;
-  align-items: flex-start;
-  margin-bottom: 16px;
+  gap: 10px;
+  align-items: stretch;
+  margin-bottom: 0;
 }
 
 .add-library-row .subscribe-form {
@@ -3420,15 +3580,21 @@ const closeAllDropdowns = () => {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 14px;
+  padding: 10px 14px;
   background: var(--bg-surface);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 10px;
   color: var(--text-secondary);
   font-size: 13px;
   cursor: pointer;
   transition: all 0.2s;
   white-space: nowrap;
+}
+
+.open-folder-button--strong {
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-surface));
+  color: var(--text-primary);
 }
 
 .open-folder-button:hover:not(:disabled) {
@@ -3460,22 +3626,24 @@ const closeAllDropdowns = () => {
 .library-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .library-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px;
-  background: var(--bg-input);
+  gap: 16px;
+  padding: 14px;
+  background: color-mix(in srgb, var(--bg-input) 94%, transparent);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  transition: border-color 0.2s;
+  border-radius: 12px;
+  transition: border-color 0.2s, background 0.2s, transform 0.2s;
 }
 
 .library-item:hover {
   border-color: var(--border-hover);
+  background: color-mix(in srgb, var(--bg-hover) 65%, var(--bg-input));
 }
 
 .library-info {
@@ -3497,6 +3665,12 @@ const closeAllDropdowns = () => {
 
 .library-info--interactive:hover .library-name {
   color: var(--accent-light);
+}
+
+.library-info--interactive:hover .library-repo,
+.library-info--interactive:hover .library-command-count,
+.library-info--interactive:hover .library-synced {
+  color: var(--text-secondary);
 }
 
 .library-info--interactive:focus-visible {
@@ -3534,8 +3708,9 @@ const closeAllDropdowns = () => {
 
 .library-actions {
   display: flex;
-  gap: 4px;
+  gap: 6px;
   flex-shrink: 0;
+  align-items: center;
 }
 
 .library-action-btn {
@@ -3579,9 +3754,17 @@ const closeAllDropdowns = () => {
 
 .library-action-btn.manage {
   width: auto;
-  padding: 0 10px;
+  padding: 0 12px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
+  color: var(--text-primary);
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-surface));
+}
+
+.library-action-btn.manage:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--border-hover));
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg-hover));
 }
 
 .library-action-btn.subtle {
@@ -3604,9 +3787,12 @@ const closeAllDropdowns = () => {
 
 .empty-libraries {
   text-align: center;
-  padding: 24px 16px;
+  padding: 28px 18px;
   color: var(--text-tertiary);
   font-size: 14px;
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg-input) 86%, transparent);
 }
 
 .empty-libraries p {
@@ -3855,6 +4041,35 @@ const closeAllDropdowns = () => {
 .import-button:focus-visible {
   outline: none;
   box-shadow: 0 0 0 1px var(--accent);
+}
+
+@media (max-width: 900px) {
+  .libraries-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .default-library-row,
+  .add-library-row,
+  .library-item,
+  .section-header-row--libraries {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .library-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 640px) {
+  .libraries-stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .subscribe-form {
+    flex-direction: column;
+  }
 }
 
 /* Init Library Modal */

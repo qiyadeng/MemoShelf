@@ -124,6 +124,23 @@ Unblocks parked ideas (tag pills, preview on copy). All in the General tab.
 - `src/App.vue` — tag pills rendering (`.tag-pill`), preview on copy toast, `matchAction()` + `matchesShortcut()` replace hardcoded key checks in `handleKeyboard`
 - `src/components/SettingsModal.vue` — Display section (toggle switches), Keyboard Shortcuts section (shortcut table with click-to-rebind, conflict detection, reset)
 
+### Phase 4: Libraries UX Refinement (planned)
+
+The Libraries tab and Library Management workspace are functionally strong, but the current presentation gets visually crowded once management is active. This phase is about sharpening that workflow for daily use as an internal dev tool: focused, practical, and still pleasant.
+
+Planned work:
+- [ ] Refactor Library Management into a focused workspace instead of a stacked inline layer ([#62](https://github.com/ArtluxDM/SnipForge/issues/62))
+- [ ] Strengthen visual hierarchy and surface depth across Libraries + Management ([#63](https://github.com/ArtluxDM/SnipForge/issues/63))
+- [ ] Refine action priority, badges, disabled states, and header polish in the Libraries flow ([#64](https://github.com/ArtluxDM/SnipForge/issues/64))
+
+Implementation notes:
+- Keep the current dark dev-tool character and orange brand accent
+- Do not over-design it into a commercial SaaS look
+- The target is calmer hierarchy, clearer modes, and cleaner repeated daily use
+- Visual observations were gathered from live MCP inspection and screenshots during app interaction
+- Current shipped direction: library management now takes over the Libraries tab as a focused workspace instead of stacking beside the parent settings surface
+- Recent UI refinements also strengthened card hierarchy, action priority, and overview density in the Libraries flow without changing the underlying workflows
+
 ### Post-Phase Hardening
 
 #### Tag Filter Semantics In Library Management And Export (issue [#32](https://github.com/ArtluxDM/SnipForge/issues/32)) - Complete
