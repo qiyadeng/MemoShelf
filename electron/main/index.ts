@@ -982,7 +982,7 @@ ipcMain.handle('library:setupDefaultWritableLocalLibrary', async () => {
     const folderPath = result.filePaths[0]
     const setup = await localLibrary.setupDefaultWritableLocalLibrary(folderPath)
     localLibrary.refreshFileWatchers()
-    return { success: true, library: setup.library, syncResult: setup.syncResult }
+    return { success: true, library: setup.library, syncResult: setup.syncResult, legacyMigration: setup.legacyMigration }
   } catch (error) {
     console.error('Library setupDefaultWritableLocalLibrary error:', error)
     return { success: false, error: (error as Error).message }

@@ -200,7 +200,15 @@ async function handleChooseDefaultWritableLibrary() {
     if (result.success && result.library) {
       showFirstRunSetup.value = false
       await loadCommands()
-      showNotificationToast(`Default library set to ${result.library.name}`)
+
+      const migration = result.legacyMigration
+      if (migration?.migrated) {
+        showNotificationToast(`Default library set to ${result.library.name}. Migrated ${migration.migrated} existing command${migration.migrated !== 1 ? 's' : ''}.`, 3500)
+      } else if (migration && !migration.completed && migration.errors.length > 0) {
+        showNotificationToast(`Default library set, but existing command migration needs retry: ${migration.errors[0]}`, 5000)
+      } else {
+        showNotificationToast(`Default library set to ${result.library.name}`)
+      }
       return
     }
 

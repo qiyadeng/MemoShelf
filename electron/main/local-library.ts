@@ -14,6 +14,7 @@ import type {
     CommandMutationResult,
     DiscoveredLibrary,
     Library,
+    LegacyDbMigrationResult,
     LibraryGitWorkflowSummary,
     LibraryManifest,
     LibraryWorkflowResult,
@@ -1793,22 +1794,17 @@ export async function migrateRemoteLibrariesToLocalWorkingCopies(
     return { migrated, skipped, errors }
 }
 
-export async function migrateLegacyDbOnlyCommandsToDefaultLibrary(): Promise<{
-    migrated: number
-    skipped: number
-    library: Library | null
-    completed: boolean
-}> {
+export async function migrateLegacyDbOnlyCommandsToDefaultLibrary(): Promise<LegacyDbMigrationResult> {
     const legacyCommands = db.getLegacyDbOnlyCommands()
     if (legacyCommands.length === 0) {
         settings.set('library.legacyDbMigrationCompleted', true)
-        return { migrated: 0, skipped: 0, library: getDefaultWritableLocalLibrary(), completed: true }
+        return { migrated: 0, skipped: 0, library: getDefaultWritableLocalLibrary(), completed: true, errors: [] }
     }
 
     const library = getDefaultWritableLocalLibrary()
     if (!library) {
         settings.set('library.legacyDbMigrationCompleted', false)
-        return { migrated: 0, skipped: 0, library: null, completed: false }
+        return { migrated: 0, skipped: 0, library: null, completed: false, errors: ['Choose a default writable library before migrating legacy commands.'] }
     }
 
     let scanResult: ScanResult
@@ -1816,7 +1812,7 @@ export async function migrateLegacyDbOnlyCommandsToDefaultLibrary(): Promise<{
         scanResult = await scanLocalFolder(library.github_repo)
     } catch {
         settings.set('library.legacyDbMigrationCompleted', false)
-        return { migrated: 0, skipped: 0, library, completed: false }
+        return { migrated: 0, skipped: 0, library, completed: false, errors: ['Default writable library could not be scanned.'] }
     }
 
     const existingBodies = new Set(scanResult.commands.map(({ command }) => command.body.trim()))
@@ -1857,7 +1853,7 @@ export async function migrateLegacyDbOnlyCommandsToDefaultLibrary(): Promise<{
 
     await syncLocalLibrary(library.id, true)
     settings.set('library.legacyDbMigrationCompleted', true)
-    return { migrated, skipped, library, completed: true }
+    return { migrated, skipped, library, completed: true, errors: [] }
 }
 // ── Open Local Folder ────────────────────────────────────────────
 
@@ -1964,10 +1960,25 @@ export async function relinkOriginLibraryToFolder(libraryId: number, folderPath:
     return { library: updated, syncResult }
 }
 
-export async function setupDefaultWritableLocalLibrary(folderPath: string): Promise<{ library: Library; syncResult: SyncResult }> {
+export async function setupDefaultWritableLocalLibrary(folderPath: string): Promise<{ library: Library; syncResult: SyncResult; legacyMigration: LegacyDbMigrationResult }> {
     const result = await indexLocalLibrary(folderPath, { ensureManifest: true, allowExisting: true })
     setDefaultWritableLocalLibrary(result.library.id)
-    return result
+
+    let legacyMigration: LegacyDbMigrationResult
+    try {
+        legacyMigration = await migrateLegacyDbOnlyCommandsToDefaultLibrary()
+    } catch (error) {
+        legacyMigration = {
+            migrated: 0,
+            skipped: 0,
+            library: result.library,
+            completed: false,
+            errors: [(error as Error).message],
+        }
+    }
+
+    const library = db.getAllLibraries().find(item => item.id === result.library.id) || result.library
+    return { ...result, library, legacyMigration }
 }
 
 // ── Init Local Library ───────────────────────────────────────────

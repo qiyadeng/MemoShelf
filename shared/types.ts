@@ -174,10 +174,19 @@ export interface DefaultWritableLibraryResult {
   error?: string
 }
 
+export interface LegacyDbMigrationResult {
+  migrated: number
+  skipped: number
+  library: Library | null
+  completed: boolean
+  errors: string[]
+}
+
 export interface DefaultWritableLibrarySetupResult {
   success: boolean
   library?: Library
   syncResult?: SyncResult
+  legacyMigration?: LegacyDbMigrationResult
   cancelled?: boolean
   error?: string
 }

@@ -4,6 +4,20 @@ Library-First Command Storage makes libraries the default way commands exist in 
 
 ## Active Notes
 
+### Issue #67: fix legacy command migration after choosing default library
+
+Plan:
+- retry legacy DB-only command migration immediately after the user chooses/sets a default writable local library, not only during startup
+- keep the migration non-destructive when the chosen library cannot be scanned
+- surface migration counts through the default-library setup result so the renderer can tell users their old commands were moved
+- add regression coverage for the first-run upgrade path where DB-only commands exist before any default library is configured
+
+Final notes:
+- default-library setup now runs the legacy DB-only migration after storing the selected writable library, closing the first-run upgrade gap where startup had no default library yet
+- setup results include a `legacyMigration` payload with migrated/skipped/error counts, and the renderer reports successful or retry-needed migration status to the user
+- existing startup migration remains in place for users who already had a valid default library before launch
+- regression coverage now verifies DB-only commands created before default-library setup are materialized as command JSON files and removed from legacy SQLite storage
+
 ### Issue #55: reconcile library docs and retire stale remote-library references
 
 Plan:

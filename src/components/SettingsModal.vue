@@ -1103,8 +1103,15 @@ async function handleChooseDefaultWritableLibrary() {
       await updateSetting('library.defaultWritableLocalLibraryId', result.library.id)
       await loadLibraries()
       emit('libraries-changed')
-      syncMessage.value = `Default writable library set to ${result.library.name}`
-      syncMessageType.value = 'success'
+      const migration = result.legacyMigration
+      if (migration?.migrated) {
+        syncMessage.value = `Default writable library set to ${result.library.name}. Migrated ${migration.migrated} existing command${migration.migrated !== 1 ? 's' : ''}.`
+      } else if (migration && !migration.completed && migration.errors.length > 0) {
+        syncMessage.value = `Default writable library set, but existing command migration needs retry: ${migration.errors[0]}`
+      } else {
+        syncMessage.value = `Default writable library set to ${result.library.name}`
+      }
+      syncMessageType.value = migration && !migration.completed && migration.errors.length > 0 ? 'error' : 'success'
       clearSyncMessage()
     } else if (!result.cancelled) {
       defaultLibraryError.value = result.error || 'Failed to choose default library'

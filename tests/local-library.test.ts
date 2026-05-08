@@ -1188,6 +1188,36 @@ describe('local library CRUD', () => {
         expect(rebuilt[0].body).toBe('echo updated from disk')
     })
 
+    it('migrates legacy DB-only commands when choosing the default local library', async () => {
+        db.addCommand({
+            title: 'Pre Setup Legacy Command',
+            body: 'echo migrate after pick',
+            description: 'created before default library exists',
+            tags: '["legacy", "first-run"]',
+            language: 'bash',
+            source: 'local',
+            library_id: null,
+            remote_path: null,
+        })
+
+        const setup = await setupDefaultWritableLocalLibrary(tmpDir)
+
+        expect(setup.legacyMigration.completed).toBe(true)
+        expect(setup.legacyMigration.migrated).toBe(1)
+        expect(setup.legacyMigration.skipped).toBe(0)
+        expect(setup.legacyMigration.errors).toEqual([])
+        expect(settings.get<boolean>('library.legacyDbMigrationCompleted')).toBe(true)
+        expect(db.getLegacyDbOnlyCommands()).toHaveLength(0)
+
+        const remoteCommands = db.getRemoteCommands(setup.library.id)
+        expect(remoteCommands).toHaveLength(1)
+        expect(remoteCommands[0].body).toBe('echo migrate after pick')
+        const filePath = path.join(tmpDir, remoteCommands[0].remote_path as string)
+        const migratedFile = JSON.parse(await fs.readFile(filePath, 'utf8'))
+        expect(migratedFile.snipforge).toBe('command')
+        expect(migratedFile.title).toBe('Pre Setup Legacy Command')
+    })
+
     it('migrates legacy DB-only commands into the default local library', async () => {
         const setup = await setupDefaultWritableLocalLibrary(tmpDir)
         db.addCommand({

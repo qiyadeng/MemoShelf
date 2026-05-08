@@ -67,7 +67,7 @@ interface Window {
       pushChanges: (libraryId: number) => Promise<import('../shared/types').LibraryWorkflowResult>
       openPullRequest: (libraryId: number) => Promise<import('../shared/types').LibraryWorkflowResult>
       getDefaultWritableLocalLibrary: () => Promise<{ success: boolean; library: any | null; error?: string }>
-      setupDefaultWritableLocalLibrary: () => Promise<{ success: boolean; library?: any; syncResult?: any; cancelled?: boolean; error?: string }>
+      setupDefaultWritableLocalLibrary: () => Promise<import('../shared/types').DefaultWritableLibrarySetupResult>
       createCommand: (command: { title: string; body: string; description: string; tags: string; language: string }) => Promise<import('../shared/types').CommandMutationResult>
       createCommands: (commands: Array<{ title: string; body: string; description: string; tags: string; language: string }>) => Promise<import('../shared/types').BatchCommandMutationResult>
       updateCommand: (id: number, updates: { title: string; body: string; description: string; tags: string; language: string }) => Promise<import('../shared/types').CommandMutationResult>
