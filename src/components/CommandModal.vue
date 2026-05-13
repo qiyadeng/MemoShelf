@@ -111,7 +111,12 @@
   import { ref, watch, nextTick, computed, onMounted, onUnmounted } from 'vue'
   import { getAllTags } from '../utils/tags'
   import { getInlineSuggestion } from '../utils/autocomplete'
-  import { generateCommandTags, normalizeCommandTitle, serializeCommandTags } from '../../shared/command-metadata'
+  import {
+    generateCommandTags,
+    normalizeCommandTitle,
+    serializeCommandTags,
+    stripRichTextImageSourcesForMetadata
+  } from '../../shared/command-metadata'
   import CodeEditor from './CodeEditor.vue'
   import RichTextEditor from './RichTextEditor.vue'
   import MarkdownEditor from './MarkdownEditor.vue'
@@ -235,16 +240,25 @@
     }
   }
 
+  const metadataBodyForCurrentForm = (body = formData.value.body): string => {
+    if (formData.value.language === 'richtext') {
+      return stripRichTextImageSourcesForMetadata(body)
+    }
+
+    return body
+  }
+
   const applyGeneratedMetadata = () => {
     const body = formData.value.body
+    const metadataBody = metadataBodyForCurrentForm(body)
     const hasBody = body.trim().length > 0
 
     if (!titleManuallyEdited.value) {
-      formData.value.title = hasBody ? normalizeCommandTitle('', body) : ''
+      formData.value.title = hasBody ? normalizeCommandTitle('', metadataBody) : ''
     }
 
     if (!tagsManuallyEdited.value) {
-      tagsInput.value = hasBody ? generateCommandTags(body, formData.value.language).join(', ') : ''
+      tagsInput.value = hasBody ? generateCommandTags(metadataBody, formData.value.language).join(', ') : ''
       clearInlineSuggestion()
     }
   }
@@ -397,6 +411,7 @@
   // Handle save
   const handleSave = () => {
     const body = formData.value.body.trim()
+    const metadataBody = metadataBodyForCurrentForm(body)
 
     if (!body) {
       alert('Command is required!')
@@ -404,10 +419,12 @@
     }
 
     emit('save', {
-      title: normalizeCommandTitle(formData.value.title, body),
+      title: normalizeCommandTitle(formData.value.title, metadataBody),
       body,
       description: formData.value.description,
-      tags: serializeCommandTags(tagsInput.value, body, formData.value.language),
+      tags: tagsManuallyEdited.value && !tagsInput.value.trim()
+        ? '[]'
+        : serializeCommandTags(tagsInput.value, metadataBody, formData.value.language),
       language: formData.value.language
     })
   }
