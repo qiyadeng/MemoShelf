@@ -91,9 +91,6 @@ function cleanTitleLine(line: string): string {
 
   return trimmed
     .replace(/^#{1,6}\s+/, '')
-    .replace(/^>\s*/, '')
-    .replace(/^[-*+]\s+/, '')
-    .replace(/^\d+[.)]\s+/, '')
     .replace(/\s+/g, ' ')
     .trim()
 }

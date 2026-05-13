@@ -29,6 +29,11 @@ describe('command metadata generation', () => {
     expect(generateCommandTitle('#include <stdio.h>')).toBe('#include <stdio.h>')
   })
 
+  it('preserves command-prefix operators when generating titles', () => {
+    expect(generateCommandTitle('> /tmp/output.log')).toBe('> /tmp/output.log')
+    expect(generateCommandTitle('* * * * * /usr/bin/backup')).toBe('* * * * * /usr/bin/backup')
+  })
+
   it('skips markdown code fences when generating a title', () => {
     expect(generateCommandTitle('```bash\nkubectl get pods -A\n```')).toBe('kubectl get pods -A')
   })
