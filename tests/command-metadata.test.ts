@@ -24,6 +24,11 @@ describe('command metadata generation', () => {
     expect(generateCommandTitle('\n# Deploy checklist\n\n- build\n- test')).toBe('Deploy checklist')
   })
 
+  it('preserves command lines that begin with hash but are not markdown headings', () => {
+    expect(generateCommandTitle('#!/usr/bin/env bash')).toBe('#!/usr/bin/env bash')
+    expect(generateCommandTitle('#include <stdio.h>')).toBe('#include <stdio.h>')
+  })
+
   it('skips markdown code fences when generating a title', () => {
     expect(generateCommandTitle('```bash\nkubectl get pods -A\n```')).toBe('kubectl get pods -A')
   })

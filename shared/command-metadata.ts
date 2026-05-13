@@ -90,7 +90,7 @@ function cleanTitleLine(line: string): string {
   if (!trimmed || trimmed.startsWith('```') || trimmed.startsWith('~~~')) return ''
 
   return trimmed
-    .replace(/^#{1,6}\s*/, '')
+    .replace(/^#{1,6}\s+/, '')
     .replace(/^>\s*/, '')
     .replace(/^[-*+]\s+/, '')
     .replace(/^\d+[.)]\s+/, '')
