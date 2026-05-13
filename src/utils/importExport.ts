@@ -15,6 +15,7 @@ const MAX_COMMANDS = 50000 // Maximum number of commands in a single import
 const MAX_TITLE_LENGTH = 500 // Maximum title length in characters
 const MAX_BODY_LENGTH = 1000000 // Maximum body length (1MB of text)
 const MAX_DESCRIPTION_LENGTH = 10000 // Maximum description length
+const hasOwn = Object.prototype.hasOwnProperty
 
 export interface ExportCommand {
   title?: string
@@ -115,6 +116,8 @@ export function importCommands(exportData: ExportData): ImportCommand[] {
   }
 
   return exportData.commands.map(command => {
+    validateCommandTitle(command)
+
     if (typeof command.body !== 'string') {
       throw new Error(`Invalid command: missing body`)
     }
@@ -153,6 +156,7 @@ export function validateExportData(data: any): data is ExportData {
   }
   if (data.snipforge === 'command') {
     // Single command file: wrap as a bundle for import
+    validateCommandTitle(data)
     if (typeof data.body === 'string' && data.body.trim()) {
       data.commands = [data]
       data.version = '1.0'
@@ -163,6 +167,7 @@ export function validateExportData(data: any): data is ExportData {
 
   // Heuristic: bare command file (no identifier, but has body and no commands array)
   if (!data.snipforge && typeof data.body === 'string' && !data.commands) {
+    validateCommandTitle(data)
     if (data.body.trim()) {
       data.commands = [data]
       data.version = '1.0'
@@ -191,9 +196,7 @@ export function validateExportData(data: any): data is ExportData {
       throw new Error(`Invalid command at index ${index}: not an object`)
     }
 
-    if (command.title && typeof command.title !== 'string') {
-      throw new Error(`Invalid command at index ${index}: title must be a string`)
-    }
+    validateCommandTitle(command, index)
 
     if (typeof command.body !== 'string' || !command.body.trim()) {
       throw new Error(`Invalid command at index ${index}: missing or invalid body`)
@@ -260,6 +263,15 @@ function parseTagsFromCommand(tagsJson: string): string[] {
     return []
   } catch {
     return []
+  }
+}
+
+function validateCommandTitle(command: any, index?: number): void {
+  if (hasOwn.call(command, 'title') && typeof command.title !== 'string') {
+    const prefix = typeof index === 'number'
+      ? `Invalid command at index ${index}`
+      : 'Invalid command'
+    throw new Error(`${prefix}: title must be a string`)
   }
 }
 

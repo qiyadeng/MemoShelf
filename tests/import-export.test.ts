@@ -116,6 +116,83 @@ describe('prepareExportBundle', () => {
 })
 
 describe('importCommands', () => {
+    it('rejects present non-string title values in bundle commands during validation', () => {
+        const invalidTitles = [null, 0, false, [], {}]
+
+        for (const title of invalidTitles) {
+            const data = {
+                snipforge: 'bundle',
+                version: '2.0',
+                exported_at: '2026-05-13T00:00:00.000Z',
+                total_commands: 1,
+                commands: [
+                    {
+                        title,
+                        body: 'git status --short',
+                        description: '',
+                        tags: [],
+                        language: 'bash',
+                        created_at: '2026-05-13T00:00:00.000Z',
+                        updated_at: '2026-05-13T00:00:00.000Z',
+                    },
+                ],
+            }
+
+            expect(() => validateExportData(data)).toThrow(/title must be a string/i)
+        }
+    })
+
+    it('rejects present non-string title values in single command exports during validation', () => {
+        const data = {
+            snipforge: 'command',
+            title: null,
+            body: 'git status --short',
+            description: '',
+            tags: [],
+            language: 'bash',
+        }
+
+        expect(() => validateExportData(data)).toThrow(/title must be a string/i)
+    })
+
+    it('rejects present non-string title values in bare command files during validation', () => {
+        const data: any = {
+            title: 0,
+            body: 'git status --short',
+            language: 'bash',
+        }
+
+        expect(() => validateExportData(data)).toThrow(/title must be a string/i)
+    })
+
+    it('allows omitted and blank string titles during validation', () => {
+        expect(() => validateExportData({
+            snipforge: 'command',
+            body: 'git status --short',
+            description: '',
+            tags: [],
+            language: 'bash',
+        })).not.toThrow()
+
+        expect(() => validateExportData({
+            snipforge: 'bundle',
+            version: '2.0',
+            exported_at: '2026-05-13T00:00:00.000Z',
+            total_commands: 1,
+            commands: [
+                {
+                    title: '',
+                    body: 'git status --short',
+                    description: '',
+                    tags: [],
+                    language: 'bash',
+                    created_at: '2026-05-13T00:00:00.000Z',
+                    updated_at: '2026-05-13T00:00:00.000Z',
+                },
+            ],
+        })).not.toThrow()
+    })
+
     it('rejects bare single command files with whitespace-only bodies during validation', () => {
         const data: any = {
             body: '   ',

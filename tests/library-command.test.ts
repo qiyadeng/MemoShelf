@@ -113,4 +113,24 @@ describe('library command normalization', () => {
     expect(result.title).toBe('docker compose logs web')
     expect(result.tags).toEqual(['bash', 'docker', 'logs'])
   })
+
+  it('rejects command file builds with whitespace-only bodies', () => {
+    expect(() => buildLibraryCommandFileData({
+      title: 'Blank Body',
+      body: '   ',
+      description: '',
+      tags: [],
+      language: 'bash',
+    }, '550e8400-e29b-41d4-a716-446655440000')).toThrow(/command body is required/i)
+  })
+
+  it('returns null for parsed command files with whitespace-only bodies', () => {
+    expect(parseLibraryCommandFile({
+      title: 'Blank Body',
+      body: '   ',
+      description: '',
+      tags: [],
+      language: 'bash',
+    })).toBeNull()
+  })
 })

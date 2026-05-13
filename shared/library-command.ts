@@ -55,8 +55,16 @@ export function normalizeLibraryTags(tags: TagsInput, body = '', language: strin
   return normalizeCommandTags(tags, body, language)
 }
 
+function normalizeRequiredCommandBody(body: string): string {
+  const normalized = body.trim()
+  if (!normalized) {
+    throw new Error('Command body is required')
+  }
+  return normalized
+}
+
 export function normalizeLibraryCommand(input: LibraryCommandInput, now = new Date().toISOString()): LibraryCommand & { id?: string } {
-  const body = input.body.trim()
+  const body = normalizeRequiredCommandBody(input.body)
   const language = normalizeCommandLanguage(input.language)
 
   return {
@@ -118,6 +126,9 @@ export function parseLibraryCommandFile(input: unknown, now = new Date().toISOSt
   if (typeof candidate.body !== 'string') {
     return null
   }
+  if (!candidate.body.trim()) {
+    return null
+  }
 
   const normalized = normalizeLibraryCommand({
     id: normalizeCommandId(candidate.id),
@@ -129,10 +140,6 @@ export function parseLibraryCommandFile(input: unknown, now = new Date().toISOSt
     created_at: typeof candidate.created_at === 'string' ? candidate.created_at : null,
     updated_at: typeof candidate.updated_at === 'string' ? candidate.updated_at : null,
   }, now)
-
-  if (!normalized.body) {
-    return null
-  }
 
   return normalized
 }

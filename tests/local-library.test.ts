@@ -144,7 +144,7 @@ describe('scanLocalFolder', () => {
         await expect(scanLocalFolder(tmpDir)).rejects.toThrow('missing "name" field')
     })
 
-    it('skips files without title or body', async () => {
+    it('skips files without usable body while accepting titleless commands', async () => {
         await fs.writeFile(path.join(tmpDir, '.snipforge.json'), JSON.stringify({
             name: 'Test', description: '', format_version: '1.0',
         }))
@@ -159,6 +159,11 @@ describe('scanLocalFolder', () => {
             title: 'No Body',
         }))
 
+        // Blank body
+        await fs.writeFile(path.join(tmpDir, 'blank-body.json'), JSON.stringify({
+            title: 'Blank Body', body: '   ',
+        }))
+
         // Missing title
         await fs.writeFile(path.join(tmpDir, 'no-title.json'), JSON.stringify({
             body: 'echo no title',
@@ -170,8 +175,14 @@ describe('scanLocalFolder', () => {
         }))
 
         const result = await scanLocalFolder(tmpDir)
-        expect(result.commands).toHaveLength(1)
-        expect(result.commands[0].command.title).toBe('Valid')
+        expect(result.commands).toHaveLength(3)
+
+        const commandsByPath = new Map(result.commands.map(command => [command.path, command.command]))
+        expect(commandsByPath.get('valid.json')?.title).toBe('Valid')
+        expect(commandsByPath.get('no-title.json')?.title).toBe('echo no title')
+        expect(commandsByPath.get('empty-title.json')?.title).toBe('echo empty')
+        expect(commandsByPath.has('no-body.json')).toBe(false)
+        expect(commandsByPath.has('blank-body.json')).toBe(false)
     })
 
     it('skips invalid JSON files gracefully', async () => {
