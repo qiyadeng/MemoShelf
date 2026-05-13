@@ -116,6 +116,51 @@ describe('prepareExportBundle', () => {
 })
 
 describe('importCommands', () => {
+    it('rejects bare single command files with whitespace-only bodies during validation', () => {
+        const data: any = {
+            body: '   ',
+            language: 'bash',
+        }
+
+        expect(() => validateExportData(data)).toThrow(/missing body/i)
+    })
+
+    it('rejects bundle commands with whitespace-only bodies during validation', () => {
+        const data = {
+            snipforge: 'bundle',
+            version: '2.0',
+            exported_at: '2026-05-13T00:00:00.000Z',
+            total_commands: 1,
+            commands: [
+                {
+                    body: '   ',
+                    description: '',
+                    tags: [],
+                    language: 'bash',
+                    created_at: '2026-05-13T00:00:00.000Z',
+                    updated_at: '2026-05-13T00:00:00.000Z',
+                },
+            ],
+        }
+
+        expect(() => validateExportData(data)).toThrow(/missing or invalid body/i)
+    })
+
+    it('defensively rejects whitespace-only bodies during direct import mapping', () => {
+        const data: any = {
+            commands: [
+                {
+                    body: '   ',
+                    description: '',
+                    tags: [],
+                    language: 'bash',
+                },
+            ],
+        }
+
+        expect(() => importCommands(data)).toThrow(/missing body/i)
+    })
+
     it('generates title and tags for titleless command imports', () => {
         const data = {
             snipforge: 'bundle',

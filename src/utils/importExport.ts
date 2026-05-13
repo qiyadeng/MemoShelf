@@ -115,11 +115,15 @@ export function importCommands(exportData: ExportData): ImportCommand[] {
   }
 
   return exportData.commands.map(command => {
-    if (!command.body || typeof command.body !== 'string') {
+    if (typeof command.body !== 'string') {
       throw new Error(`Invalid command: missing body`)
     }
 
     const body = command.body.trim()
+    if (!body) {
+      throw new Error(`Invalid command: missing body`)
+    }
+
     const language = normalizeCommandLanguage(command.language)
 
     return {
@@ -149,7 +153,7 @@ export function validateExportData(data: any): data is ExportData {
   }
   if (data.snipforge === 'command') {
     // Single command file: wrap as a bundle for import
-    if (typeof data.body === 'string') {
+    if (typeof data.body === 'string' && data.body.trim()) {
       data.commands = [data]
       data.version = '1.0'
       return true
@@ -159,9 +163,12 @@ export function validateExportData(data: any): data is ExportData {
 
   // Heuristic: bare command file (no identifier, but has body and no commands array)
   if (!data.snipforge && typeof data.body === 'string' && !data.commands) {
-    data.commands = [data]
-    data.version = '1.0'
-    return true
+    if (data.body.trim()) {
+      data.commands = [data]
+      data.version = '1.0'
+      return true
+    }
+    throw new Error('Invalid command file: missing body')
   }
 
   // Bundle: validate by identifier or fall back to heuristics (version + commands)
@@ -188,7 +195,7 @@ export function validateExportData(data: any): data is ExportData {
       throw new Error(`Invalid command at index ${index}: title must be a string`)
     }
 
-    if (!command.body || typeof command.body !== 'string') {
+    if (typeof command.body !== 'string' || !command.body.trim()) {
       throw new Error(`Invalid command at index ${index}: missing or invalid body`)
     }
 
