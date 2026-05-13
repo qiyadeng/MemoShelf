@@ -850,6 +850,35 @@ describe('local library CRUD', () => {
         expect(db.getRemoteCommands(setup.library.id)).toHaveLength(0)
     })
 
+    it('creates body-first commands using generated title and tags for file names, file data, and index data', async () => {
+        const setup = await setupDefaultWritableLocalLibrary(tmpDir)
+
+        const createResult = await createLocalLibraryCommand({
+            title: '',
+            body: '  kubectl get pods -A  ',
+            description: '  list all pods  ',
+            tags: '',
+            language: '  BASH  ',
+        })
+
+        expect(createResult.success).toBe(true)
+
+        const [indexedCommand] = db.getRemoteCommands(setup.library.id)
+        expect(indexedCommand.remote_path).toBe('kubectl-get-pods-a.json')
+        expect(indexedCommand.title).toBe('kubectl get pods -A')
+        expect(indexedCommand.body).toBe('kubectl get pods -A')
+        expect(indexedCommand.description).toBe('list all pods')
+        expect(indexedCommand.tags).toBe('["bash","kubectl","kubernetes"]')
+        expect(indexedCommand.language).toBe('bash')
+
+        const savedFile = JSON.parse(await fs.readFile(path.join(tmpDir, indexedCommand.remote_path as string), 'utf8'))
+        expect(savedFile.title).toBe('kubectl get pods -A')
+        expect(savedFile.body).toBe('kubectl get pods -A')
+        expect(savedFile.description).toBe('list all pods')
+        expect(savedFile.tags).toEqual(['bash', 'kubectl', 'kubernetes'])
+        expect(savedFile.language).toBe('bash')
+    })
+
     it('extracts rich text images into library attachments and indexes them back as local file URLs', async () => {
         const setup = await setupDefaultWritableLocalLibrary(tmpDir)
         const richBody = `<p>Checklist</p><img src="${TINY_PNG_DATA_URI}" alt="tiny">`
@@ -965,6 +994,41 @@ describe('local library CRUD', () => {
         expect(renamedFile.body).toBe('git commit --fixup HEAD')
     })
 
+    it('renames writable command files from generated titles when edited body-first', async () => {
+        const setup = await setupDefaultWritableLocalLibrary(tmpDir)
+
+        await createLocalLibraryCommand({
+            title: 'Old Title',
+            body: 'echo old',
+            description: '',
+            tags: '[]',
+            language: 'bash',
+        })
+
+        const [createdCommand] = db.getRemoteCommands(setup.library.id)
+        const updateResult = await updateLocalLibraryCommand(createdCommand.id, {
+            title: '',
+            body: '  docker compose logs web  ',
+            description: '  service logs  ',
+            tags: '',
+            language: '  BASH  ',
+        })
+
+        expect(updateResult.success).toBe(true)
+
+        const [updatedCommand] = db.getRemoteCommands(setup.library.id)
+        expect(updatedCommand.remote_path).toBe('docker-compose-logs-web.json')
+        expect(updatedCommand.title).toBe('docker compose logs web')
+        expect(updatedCommand.body).toBe('docker compose logs web')
+        expect(updatedCommand.tags).toBe('["bash","docker","logs"]')
+        await expect(fs.access(path.join(tmpDir, createdCommand.remote_path as string))).rejects.toThrow()
+
+        const updatedFile = JSON.parse(await fs.readFile(path.join(tmpDir, updatedCommand.remote_path as string), 'utf8'))
+        expect(updatedFile.title).toBe('docker compose logs web')
+        expect(updatedFile.body).toBe('docker compose logs web')
+        expect(updatedFile.tags).toEqual(['bash', 'docker', 'logs'])
+    })
+
     it('batches command creation into a single local-library sync', async () => {
         const setup = await setupDefaultWritableLocalLibrary(tmpDir)
 
@@ -996,6 +1060,40 @@ describe('local library CRUD', () => {
         expect(commands.map(command => command.title).sort()).toEqual(['Git Pull', 'Git Status'])
     })
 
+    it('batches body-first command creation using generated titles for filenames', async () => {
+        const setup = await setupDefaultWritableLocalLibrary(tmpDir)
+
+        const result = await createLocalLibraryCommands([
+            {
+                title: '',
+                body: 'kubectl get pods -A',
+                description: '',
+                tags: '',
+                language: 'bash',
+            },
+            {
+                title: '',
+                body: 'docker compose logs web',
+                description: '',
+                tags: '',
+                language: 'bash',
+            },
+        ])
+
+        expect(result.success).toBe(true)
+        expect(result.succeeded).toBe(2)
+
+        const commands = db.getRemoteCommands(setup.library.id)
+        expect(commands.map(command => command.remote_path).sort()).toEqual([
+            'docker-compose-logs-web.json',
+            'kubectl-get-pods-a.json',
+        ])
+        expect(commands.map(command => command.title).sort()).toEqual([
+            'docker compose logs web',
+            'kubectl get pods -A',
+        ])
+    })
+
     it('duplicates read-only library command edits into the default writable library', async () => {
         const setup = await setupDefaultWritableLocalLibrary(tmpDir)
         const consumerRoot = path.join(tmpDir, 'consumer-library')
@@ -1025,11 +1123,11 @@ describe('local library CRUD', () => {
 
         const [readOnlyCommand] = db.getRemoteCommands(opened.library.id)
         const result = await updateLocalLibraryCommand(readOnlyCommand.id, {
-            title: 'Forked Edit',
-            body: 'echo forked edit',
+            title: '',
+            body: '  docker compose logs web  ',
             description: 'edited copy',
-            tags: '["forked"]',
-            language: 'bash',
+            tags: '',
+            language: '  BASH  ',
         })
 
         expect(result.success).toBe(true)
@@ -1041,9 +1139,10 @@ describe('local library CRUD', () => {
 
         const defaultCommands = db.getRemoteCommands(setup.library.id)
         expect(defaultCommands).toHaveLength(1)
-        expect(defaultCommands[0].title).toBe('Forked Edit')
-        expect(defaultCommands[0].body).toBe('echo forked edit')
-        expect(defaultCommands[0].remote_path).toBe('forked-edit.json')
+        expect(defaultCommands[0].title).toBe('docker compose logs web')
+        expect(defaultCommands[0].body).toBe('docker compose logs web')
+        expect(defaultCommands[0].tags).toBe('["bash","docker","logs"]')
+        expect(defaultCommands[0].remote_path).toBe('docker-compose-logs-web.json')
     })
 
     it('blocks deleting read-only library cache rows', async () => {
@@ -1094,16 +1193,18 @@ describe('local library CRUD', () => {
         })
 
         const updateResult = await updateLocalLibraryCommand(commandId, {
-            title: 'Legacy Command Updated',
-            body: 'echo legacy updated',
+            title: '',
+            body: '  docker compose logs web  ',
             description: 'still local',
-            tags: '["legacy"]',
-            language: 'bash',
+            tags: '',
+            language: '  BASH  ',
         })
 
         expect(updateResult.success).toBe(true)
         expect(updateResult.mode).toBe('database')
-        expect(db.getAllCommands()[0].title).toBe('Legacy Command Updated')
+        expect(db.getAllCommands()[0].title).toBe('docker compose logs web')
+        expect(db.getAllCommands()[0].body).toBe('docker compose logs web')
+        expect(db.getAllCommands()[0].tags).toBe('["bash","docker","logs"]')
 
         const deleteResult = await deleteLocalLibraryCommand(commandId)
         expect(deleteResult.success).toBe(true)

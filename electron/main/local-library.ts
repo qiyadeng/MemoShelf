@@ -30,6 +30,11 @@ import {
     slugify,
     toIndexedLibraryCommandData,
 } from '../../shared/library-command'
+import {
+    normalizeCommandLanguage,
+    normalizeCommandTitle,
+    serializeCommandTags,
+} from '../../shared/command-metadata'
 export { slugify } from '../../shared/library-command'
 
 // ── Local Folder Scanning ────────────────────────────────────────
@@ -51,6 +56,32 @@ interface CommandFormData {
 interface RemoteLibraryMigrationOptions {
     runGit?: GitCommandRunner
     resolveCloneSource?: (owner: string, repo: string) => string
+}
+
+function normalizeRequiredCommandBody(body: unknown): string {
+    const normalized = typeof body === 'string' ? body.trim() : ''
+    if (!normalized) {
+        throw new Error('Command body is required')
+    }
+    return normalized
+}
+
+function normalizeCommandFormData(command: CommandFormData): CommandFormData {
+    const body = normalizeRequiredCommandBody(command.body)
+    const language = normalizeCommandLanguage(command.language)
+
+    return {
+        title: normalizeCommandTitle(command.title, body),
+        body,
+        description: (command.description || '').trim(),
+        tags: serializeCommandTags(command.tags, body, language),
+        language,
+    }
+}
+
+function getBatchCommandErrorTitle(command: CommandFormData): string {
+    const body = typeof command.body === 'string' ? command.body.trim() : ''
+    return normalizeCommandTitle(command.title, body)
 }
 
 const LIBRARY_ATTACHMENTS_DIR = 'attachments'
@@ -1323,9 +1354,10 @@ export async function createLocalLibraryCommand(command: CommandFormData): Promi
         }
     }
 
-    const fileName = await findUniqueCommandFileName(library.github_repo, command.title)
+    const normalizedCommand = normalizeCommandFormData(command)
+    const fileName = await findUniqueCommandFileName(library.github_repo, normalizedCommand.title)
     const createdAt = new Date().toISOString()
-    await writeCommandFile(library.github_repo, fileName, command, createdAt, createCommandId())
+    await writeCommandFile(library.github_repo, fileName, normalizedCommand, createdAt, createCommandId())
 
     const syncResult = await syncLocalLibrary(library.id, true)
     const updatedLibrary = db.getAllLibraries().find(l => l.id === library.id) || library
@@ -1352,13 +1384,16 @@ export async function createLocalLibraryCommands(commands: CommandFormData[]): P
     let succeeded = 0
 
     for (const command of commands) {
+        let errorTitle = getBatchCommandErrorTitle(command)
         try {
-            const fileName = await findUniqueCommandFileName(library.github_repo, command.title)
+            const normalizedCommand = normalizeCommandFormData(command)
+            errorTitle = normalizedCommand.title
+            const fileName = await findUniqueCommandFileName(library.github_repo, normalizedCommand.title)
             const createdAt = new Date().toISOString()
-            await writeCommandFile(library.github_repo, fileName, command, createdAt, createCommandId())
+            await writeCommandFile(library.github_repo, fileName, normalizedCommand, createdAt, createCommandId())
             succeeded += 1
         } catch (error) {
-            errors.push(`Failed to create "${command.title}": ${(error as Error).message}`)
+            errors.push(`Failed to create "${errorTitle}": ${(error as Error).message}`)
         }
     }
 
@@ -1390,6 +1425,7 @@ export async function createLocalLibraryCommands(commands: CommandFormData[]): P
 }
 
 export async function updateLocalLibraryCommand(commandId: number, updates: CommandFormData): Promise<CommandMutationResult> {
+    const normalizedUpdates = normalizeCommandFormData(updates)
     const target = resolveWritableFileBackedCommand(commandId)
     if (!target) {
         const readOnlyTarget = resolveLibraryBackedCommand(commandId)
@@ -1402,26 +1438,26 @@ export async function updateLocalLibraryCommand(commandId: number, updates: Comm
                 }
             }
 
-            const fileName = await findUniqueCommandFileName(library.github_repo, updates.title)
+            const fileName = await findUniqueCommandFileName(library.github_repo, normalizedUpdates.title)
             const createdAt = new Date().toISOString()
-            await writeCommandFile(library.github_repo, fileName, updates, createdAt, createCommandId())
+            await writeCommandFile(library.github_repo, fileName, normalizedUpdates, createdAt, createCommandId())
             const syncResult = await syncLocalLibrary(library.id, true)
             const updatedLibrary = db.getAllLibraries().find(l => l.id === library.id) || library
             return { success: true, mode: 'library', library: updatedLibrary, syncResult }
         }
 
         const success = db.updateCommand(commandId, {
-            title: updates.title,
-            body: updates.body,
-            description: updates.description,
-            tags: updates.tags,
-            language: updates.language,
+            title: normalizedUpdates.title,
+            body: normalizedUpdates.body,
+            description: normalizedUpdates.description,
+            tags: normalizedUpdates.tags,
+            language: normalizedUpdates.language,
         })
         return { success, mode: 'database' }
     }
 
     const currentFileName = target.command.remote_path
-    const nextFileName = await resolveUpdatedCommandFileName(target.library.github_repo, currentFileName, updates.title)
+    const nextFileName = await resolveUpdatedCommandFileName(target.library.github_repo, currentFileName, normalizedUpdates.title)
     const filePath = path.join(target.library.github_repo, currentFileName)
     const existing = await readLibraryCommandFileMetadata(filePath)
 
@@ -1436,7 +1472,7 @@ export async function updateLocalLibraryCommand(commandId: number, updates: Comm
     await writeCommandFile(
         target.library.github_repo,
         nextFileName,
-        updates,
+        normalizedUpdates,
         existing.created_at || target.command.created_at,
         existing.id || createCommandId()
     )

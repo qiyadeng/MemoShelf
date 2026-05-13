@@ -428,7 +428,6 @@ function isValidCommandBatch(value: unknown): value is Array<{ title: string; bo
     isValidCommandUpdate(command) &&
     typeof command.title === 'string' &&
     typeof command.body === 'string' &&
-    command.title.trim().length > 0 &&
     command.body.trim().length > 0
   )
 }
@@ -994,7 +993,6 @@ ipcMain.handle('library:createCommand', async (_, command: { title: string; body
     !isValidCommandUpdate(command) ||
     typeof command.title !== 'string' ||
     typeof command.body !== 'string' ||
-    !command.title.trim() ||
     !command.body.trim()
   ) {
     return { success: false, error: 'Invalid command data' }
@@ -1023,7 +1021,6 @@ ipcMain.handle('library:updateCommand', async (_, id: number, updates: { title: 
   if (
     typeof id !== 'number' ||
     !isValidCommandUpdate(updates) ||
-    !updates.title.trim() ||
     !updates.body.trim()
   ) {
     return { success: false, error: 'Invalid parameters' }

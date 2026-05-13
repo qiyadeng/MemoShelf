@@ -38,6 +38,26 @@ describe('addCommand', () => {
         expect(all[0].body).toBe('echo hello')
     })
 
+    it('normalizes blank title and tags from body before inserting', () => {
+        db.addCommand({
+            title: '',
+            body: '  kubectl get pods -A  ',
+            description: '  list all pods  ',
+            tags: '',
+            language: '  BASH  ',
+            source: 'local',
+            library_id: null,
+            remote_path: null,
+        })
+
+        const [command] = db.getAllCommands()
+        expect(command.title).toBe('kubectl get pods -A')
+        expect(command.body).toBe('kubectl get pods -A')
+        expect(command.description).toBe('list all pods')
+        expect(command.tags).toBe('["bash","kubectl","kubernetes"]')
+        expect(command.language).toBe('bash')
+    })
+
     it('inserts multiple commands in one transaction', () => {
         const inserted = db.addCommands([
             {
@@ -64,6 +84,72 @@ describe('addCommand', () => {
 
         expect(inserted).toBe(2)
         expect(db.getAllCommands()).toHaveLength(2)
+    })
+
+    it('normalizes blank title and tags for batch inserts', () => {
+        const inserted = db.addCommands([
+            {
+                title: '',
+                body: '  kubectl get pods -A  ',
+                description: '',
+                tags: '',
+                language: '  BASH  ',
+                source: 'local',
+                library_id: null,
+                remote_path: null,
+            },
+        ])
+
+        expect(inserted).toBe(1)
+        const [command] = db.getAllCommands()
+        expect(command.title).toBe('kubectl get pods -A')
+        expect(command.body).toBe('kubectl get pods -A')
+        expect(command.tags).toBe('["bash","kubectl","kubernetes"]')
+        expect(command.language).toBe('bash')
+    })
+
+    it('rejects commands without a body', () => {
+        expect(() => db.addCommand({
+            title: '',
+            body: '   ',
+            description: '',
+            tags: '',
+            language: 'bash',
+            source: 'local',
+            library_id: null,
+            remote_path: null,
+        })).toThrow('Command body is required')
+    })
+})
+
+describe('updateCommand', () => {
+    it('normalizes blank title and tags from body before updating', () => {
+        const id = db.addCommand({
+            title: 'Old Title',
+            body: 'echo old',
+            description: '',
+            tags: '[]',
+            language: 'bash',
+            source: 'local',
+            library_id: null,
+            remote_path: null,
+        })
+
+        const updated = db.updateCommand(id, {
+            title: '',
+            body: '  docker compose logs web  ',
+            description: '  service logs  ',
+            tags: '',
+            language: '  BASH  ',
+        })
+
+        expect(updated).toBe(true)
+        const [command] = db.getAllCommands()
+        expect(command.title).toBe('docker compose logs web')
+        expect(command.body).toBe('docker compose logs web')
+        expect(command.description).toBe('service logs')
+        expect(command.tags).toBe('["bash","docker","logs"]')
+        expect(command.language).toBe('bash')
     })
 })
 
@@ -156,6 +242,70 @@ describe('syncRemoteCommands', () => {
         libraryId = db.addLibrary('/tmp/test-lib', 'Test Library', 'desc', '.snipforge.json', 'local', 'owner')
     })
 
+    it('normalizes blank title and tags for remote add and update paths while preserving remote metadata', () => {
+        const createdAt = '2026-01-01T00:00:00.000Z'
+        const updatedAt = '2026-01-02T00:00:00.000Z'
+        const id = db.addRemoteCommand(libraryId, 'kubectl.json', {
+            title: '',
+            body: '  kubectl get pods -A  ',
+            description: '  cluster pods  ',
+            tags: '',
+            language: '  BASH  ',
+            created_at: createdAt,
+            updated_at: updatedAt,
+        })
+
+        let [command] = db.getRemoteCommands(libraryId)
+        expect(command.id).toBe(id)
+        expect(command.title).toBe('kubectl get pods -A')
+        expect(command.body).toBe('kubectl get pods -A')
+        expect(command.description).toBe('cluster pods')
+        expect(command.tags).toBe('["bash","kubectl","kubernetes"]')
+        expect(command.language).toBe('bash')
+        expect(command.created_at).toBe(createdAt)
+        expect(command.updated_at).toBe(updatedAt)
+        expect(command.remote_path).toBe('kubectl.json')
+        expect(command.library_id).toBe(libraryId)
+
+        expect(db.updateRemoteCommand(libraryId, 'kubectl.json', {
+            title: '',
+            body: '  docker compose logs web  ',
+            description: '  service logs  ',
+            tags: '',
+            language: '  BASH  ',
+            updated_at: '2026-01-03T00:00:00.000Z',
+        })).toBe(true)
+
+        ;[command] = db.getRemoteCommands(libraryId)
+        expect(command.title).toBe('docker compose logs web')
+        expect(command.body).toBe('docker compose logs web')
+        expect(command.tags).toBe('["bash","docker","logs"]')
+        expect(command.created_at).toBe(createdAt)
+        expect(command.updated_at).toBe('2026-01-03T00:00:00.000Z')
+        expect(command.remote_path).toBe('kubectl.json')
+        expect(command.library_id).toBe(libraryId)
+
+        expect(db.updateRemoteCommandById(id, {
+            remote_path: 'docker.json',
+            title: '',
+            body: '  kubectl get pods -A  ',
+            description: '  cluster pods again  ',
+            tags: '',
+            language: '  BASH  ',
+            created_at: createdAt,
+            updated_at: '2026-01-04T00:00:00.000Z',
+        })).toBe(true)
+
+        ;[command] = db.getRemoteCommands(libraryId)
+        expect(command.title).toBe('kubectl get pods -A')
+        expect(command.body).toBe('kubectl get pods -A')
+        expect(command.tags).toBe('["bash","kubectl","kubernetes"]')
+        expect(command.created_at).toBe(createdAt)
+        expect(command.updated_at).toBe('2026-01-04T00:00:00.000Z')
+        expect(command.remote_path).toBe('docker.json')
+        expect(command.library_id).toBe(libraryId)
+    })
+
     it('adds commands and updates SHA on success', () => {
         const result = db.syncRemoteCommands(libraryId, 'abc123', [
             {
@@ -198,13 +348,13 @@ describe('syncRemoteCommands', () => {
             }
         ], [], [])
 
-        // Force an error by passing null title (NOT NULL constraint violation)
+        // Force an error by passing a missing body.
         const result = db.syncRemoteCommands(libraryId, 'new-sha', [
             {
                 remotePath: 'bad-cmd.json',
                 command: {
-                    title: null as unknown as string,
-                    body: 'echo bad',
+                    title: 'Bad Command',
+                    body: null as unknown as string,
                     description: '',
                     tags: '[]',
                     language: 'bash',
@@ -240,8 +390,8 @@ describe('syncRemoteCommands', () => {
             {
                 remotePath: 'bad.json',
                 command: {
-                    title: null as unknown as string,
-                    body: 'echo bad',
+                    title: 'Bad Command',
+                    body: null as unknown as string,
                     description: '',
                     tags: '[]',
                     language: 'bash',
