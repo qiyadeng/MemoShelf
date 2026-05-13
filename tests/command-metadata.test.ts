@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   generateCommandTags,
   generateCommandTitle,
+  MAX_COMMAND_TAGS,
   normalizeCommandLanguage,
   normalizeCommandTags,
   normalizeCommandTitle,
@@ -19,6 +20,10 @@ describe('command metadata generation', () => {
 
   it('skips markdown code fences when generating a title', () => {
     expect(generateCommandTitle('```bash\nkubectl get pods -A\n```')).toBe('kubectl get pods -A')
+  })
+
+  it('skips markdown tilde fences when generating a title', () => {
+    expect(generateCommandTitle('~~~bash\nkubectl get pods\n~~~')).toBe('kubectl get pods')
   })
 
   it('falls back only when body has no meaningful text', () => {
@@ -40,8 +45,23 @@ describe('command metadata generation', () => {
     expect(generateCommandTags('kubectl get pods -A', 'bash')).toEqual(['bash', 'kubectl', 'kubernetes'])
   })
 
+  it('caps manual tags to the maximum stored count', () => {
+    const manualTags = JSON.stringify(
+      Array.from({ length: MAX_COMMAND_TAGS + 1 }, (_, index) => `Tag ${index + 1}`),
+    )
+
+    expect(normalizeCommandTags(manualTags, 'git status', 'bash')).toEqual(
+      Array.from({ length: MAX_COMMAND_TAGS }, (_, index) => `tag ${index + 1}`),
+    )
+  })
+
   it('generates database and log tags from SQL-like body text', () => {
     expect(generateCommandTags('SELECT * FROM logs WHERE level = ERROR', 'sql')).toEqual(['sql', 'database', 'logs'])
+  })
+
+  it('excludes plaintext and richtext from generated language tags', () => {
+    expect(generateCommandTags('echo hello', 'plaintext')).toEqual([])
+    expect(generateCommandTags('echo hello', 'richtext')).toEqual([])
   })
 
   it('normalizes manual tags instead of generating over them', () => {

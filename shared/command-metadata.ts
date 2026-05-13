@@ -85,7 +85,7 @@ export function serializeCommandTags(tags: TagsInput, body: string, language?: s
 
 function cleanTitleLine(line: string): string {
   const trimmed = line.trim()
-  if (!trimmed || /^```/.test(trimmed)) return ''
+  if (!trimmed || trimmed.startsWith('```') || trimmed.startsWith('~~~')) return ''
 
   return trimmed
     .replace(/^#{1,6}\s*/, '')
