@@ -73,7 +73,31 @@ describe('addCommand', () => {
         })
 
         const [command] = db.getAllCommands()
-        expect(command.title).toBe(body)
+        expect(command.title).toBe('<p>Screenshot</p><img src="[image]" alt="inline">')
+        expect(command.body).toBe(body)
+        expect(command.tags).toBe('[]')
+        expect(command.language).toBe('richtext')
+    })
+
+    it('generates richtext titles from sanitized image metadata', () => {
+        const body = '<img src="data:image/png;base64,api" alt="inline"><p>Screenshot</p>'
+
+        db.addCommand({
+            title: '',
+            body: `  ${body}  `,
+            description: '',
+            tags: '',
+            language: 'richtext',
+            source: 'local',
+            library_id: null,
+            remote_path: null,
+        })
+
+        const [command] = db.getAllCommands()
+        expect(command.title).toBe('<img src="[image]" alt="inline"><p>Screenshot</p>')
+        expect(command.title).not.toContain('data:image')
+        expect(command.title).not.toContain('base64')
+        expect(command.title).not.toContain('api')
         expect(command.body).toBe(body)
         expect(command.tags).toBe('[]')
         expect(command.language).toBe('richtext')

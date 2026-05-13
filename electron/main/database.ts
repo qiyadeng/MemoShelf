@@ -239,13 +239,13 @@ function normalizeRequiredDbBody(body: unknown): string {
 function normalizeDbCommand(command: DbCommandInput): Pick<Command, 'title' | 'body' | 'description' | 'tags' | 'language'> {
     const body = normalizeRequiredDbBody(command.body)
     const language = normalizeCommandLanguage(command.language)
-    const tagSourceBody = language === 'richtext' ? stripRichTextImageSourcesForMetadata(body) : body
+    const metadataBody = language === 'richtext' ? stripRichTextImageSourcesForMetadata(body) : body
 
     return {
-        title: normalizeCommandTitle(command.title, body).slice(0, MAX_TITLE_LENGTH),
+        title: normalizeCommandTitle(command.title, metadataBody).slice(0, MAX_TITLE_LENGTH),
         body,
         description: typeof command.description === 'string' ? command.description.trim() : '',
-        tags: serializeDbCommandTags(command.tags, tagSourceBody, language),
+        tags: serializeDbCommandTags(command.tags, metadataBody, language),
         language,
     }
 }
