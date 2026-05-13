@@ -7,6 +7,8 @@ export const MAX_COMMAND_TAGS = 12
 
 const NON_TAG_LANGUAGES = new Set(['plaintext', 'richtext'])
 
+const SQL_EVIDENCE_PATTERN = /\bsql\b|\bpsql\b|\bpostgres(?:ql)?\b|\bmysql\b|\bsqlite\b|\bselect\b[\s\S]*\bfrom\b|\binsert\s+into\b|\bupdate\b[\s\S]*\bset\b|\bdelete\s+from\b/i
+
 const KEYWORD_TAG_RULES: Array<{ tag: string; pattern: RegExp }> = [
   { tag: 'git', pattern: /\bgit\b/i },
   { tag: 'docker', pattern: /\bdocker\b|\bdocker-compose\b/i },
@@ -19,8 +21,8 @@ const KEYWORD_TAG_RULES: Array<{ tag: string; pattern: RegExp }> = [
   { tag: 'pnpm', pattern: /\bpnpm\b/i },
   { tag: 'node', pattern: /\bnode\b|\bnpm\b|\bpnpm\b|\byarn\b/i },
   { tag: 'python', pattern: /\bpython\b|\bpip\b|\bpytest\b/i },
-  { tag: 'sql', pattern: /\bsql\b|\bselect\b|\binsert\b|\bupdate\b|\bdelete\b|\bfrom\b|\bwhere\b/i },
-  { tag: 'database', pattern: /\bsql\b|\bpostgres\b|\bpsql\b|\bmysql\b|\bsqlite\b|\bselect\b|\bfrom\b/i },
+  { tag: 'sql', pattern: SQL_EVIDENCE_PATTERN },
+  { tag: 'database', pattern: SQL_EVIDENCE_PATTERN },
   { tag: 'postgres', pattern: /\bpostgres\b|\bpsql\b|\bpostgresql\b/i },
   { tag: 'nginx', pattern: /\bnginx\b/i },
   { tag: 'terraform', pattern: /\bterraform\b|\btf\b/i },
@@ -92,7 +94,6 @@ function cleanTitleLine(line: string): string {
     .replace(/^>\s*/, '')
     .replace(/^[-*+]\s+/, '')
     .replace(/^\d+[.)]\s+/, '')
-    .replace(/[`*_]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
 }

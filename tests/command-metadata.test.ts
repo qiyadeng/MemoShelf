@@ -14,6 +14,12 @@ describe('command metadata generation', () => {
     expect(generateCommandTitle('  git reset --soft HEAD~1\n\nmore detail')).toBe('git reset --soft HEAD~1')
   })
 
+  it('preserves command-significant characters when generating titles', () => {
+    expect(generateCommandTitle('run_db_backup --output user_data.sql')).toBe('run_db_backup --output user_data.sql')
+    expect(generateCommandTitle('printf "*"')).toBe('printf "*"')
+    expect(generateCommandTitle('echo `pwd`')).toBe('echo `pwd`')
+  })
+
   it('generates a title from markdown headings', () => {
     expect(generateCommandTitle('\n# Deploy checklist\n\n- build\n- test')).toBe('Deploy checklist')
   })
@@ -86,6 +92,14 @@ describe('command metadata generation', () => {
 
   it('generates database and log tags from SQL-like body text', () => {
     expect(generateCommandTags('SELECT * FROM logs WHERE level = ERROR', 'sql')).toEqual(['sql', 'database', 'logs'])
+  })
+
+  it('does not generate sql or database tags from plain English from and where', () => {
+    const tags = generateCommandTags('copy logs from prod where errors appear', 'plaintext')
+
+    expect(tags).toContain('logs')
+    expect(tags).not.toContain('sql')
+    expect(tags).not.toContain('database')
   })
 
   it('excludes plaintext and richtext from generated language tags', () => {
