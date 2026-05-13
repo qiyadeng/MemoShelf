@@ -2,6 +2,7 @@ import {
   normalizeCommandLanguage,
   normalizeCommandTags,
   normalizeCommandTitle,
+  stripRichTextImageSourcesForMetadata,
 } from './command-metadata'
 import type { LibraryCommand } from './types'
 
@@ -66,13 +67,14 @@ function normalizeRequiredCommandBody(body: string): string {
 export function normalizeLibraryCommand(input: LibraryCommandInput, now = new Date().toISOString()): LibraryCommand & { id?: string } {
   const body = normalizeRequiredCommandBody(input.body)
   const language = normalizeCommandLanguage(input.language)
+  const metadataBody = language === 'richtext' ? stripRichTextImageSourcesForMetadata(body) : body
 
   return {
     id: normalizeCommandId(input.id) || undefined,
-    title: normalizeCommandTitle(input.title, body),
+    title: normalizeCommandTitle(input.title, metadataBody),
     body,
     description: (input.description || '').trim(),
-    tags: normalizeLibraryTags(input.tags, body, language),
+    tags: normalizeLibraryTags(input.tags, metadataBody, language),
     language,
     created_at: normalizeTimestamp(input.created_at, now),
     updated_at: normalizeTimestamp(input.updated_at, now),

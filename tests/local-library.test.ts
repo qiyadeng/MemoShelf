@@ -948,6 +948,52 @@ describe('local library CRUD', () => {
         expect(savedFile.body).toContain('attachments/')
     })
 
+    it('does not generate full-sync rich text tags from image sources', async () => {
+        await fs.writeFile(path.join(tmpDir, '.snipforge.json'), JSON.stringify({
+            snipforge: 'library',
+            name: 'Full Sync Rich Text',
+            description: '',
+            format_version: '1.0',
+        }, null, 2) + '\n')
+
+        const attachmentDir = path.join(tmpDir, 'attachments', '11111111-1111-1111-1111-111111111111')
+        await fs.mkdir(attachmentDir, { recursive: true })
+        await fs.writeFile(path.join(attachmentDir, 'image-api.png'), 'not really an image')
+
+        await fs.writeFile(path.join(tmpDir, 'inline-image.json'), JSON.stringify({
+            snipforge: 'command',
+            id: '22222222-2222-2222-2222-222222222222',
+            title: 'Inline Image',
+            body: '<p>Screenshot attached</p><img src="data:image/png;base64,api" alt="inline">',
+            description: '',
+            tags: '',
+            language: 'richtext',
+            created_at: '2026-01-01T00:00:00.000Z',
+            updated_at: '2026-01-01T00:00:00.000Z',
+        }, null, 2) + '\n')
+
+        await fs.writeFile(path.join(tmpDir, 'relative-image.json'), JSON.stringify({
+            snipforge: 'command',
+            id: '33333333-3333-3333-3333-333333333333',
+            title: 'Relative Image',
+            body: '<p>Screenshot attached</p><img src="attachments/11111111-1111-1111-1111-111111111111/image-api.png" alt="relative">',
+            description: '',
+            tags: '',
+            language: 'richtext',
+            created_at: '2026-01-01T00:00:00.000Z',
+            updated_at: '2026-01-01T00:00:00.000Z',
+        }, null, 2) + '\n')
+
+        const opened = await openLocalFolder(tmpDir)
+        if ('needsPick' in opened) {
+            throw new Error('Expected local library to open directly')
+        }
+
+        const commands = db.getRemoteCommands(opened.library.id)
+        expect(commands).toHaveLength(2)
+        expect(commands.map(command => command.tags)).toEqual(['[]', '[]'])
+    })
+
     it('normalizes rich text metadata and attachment URLs from watcher updates', async () => {
         const setup = await setupDefaultWritableLocalLibrary(tmpDir)
 

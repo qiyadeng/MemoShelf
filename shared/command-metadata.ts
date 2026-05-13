@@ -6,6 +6,8 @@ export const MAX_STORED_TITLE_LENGTH = 500
 export const MAX_COMMAND_TAGS = 12
 
 const NON_TAG_LANGUAGES = new Set(['plaintext', 'richtext'])
+const RICHTEXT_IMAGE_TAG_RE = /<img\b[^>]*>/gi
+const RICHTEXT_IMAGE_SRC_ATTR_RE = /\bsrc=(['"])(.*?)\1/i
 
 const SQL_EVIDENCE_PATTERN = /\bsql\b|\bpsql\b|\bpostgres(?:ql)?\b|\bmysql\b|\bsqlite\b|\bselect\b[\s\S]*\bfrom\b|\binsert\s+into\b|\bupdate\b[\s\S]*\bset\b|\bdelete\s+from\b/i
 
@@ -83,6 +85,10 @@ export function normalizeCommandTags(tags: TagsInput, body: string, language?: s
 
 export function serializeCommandTags(tags: TagsInput, body: string, language?: string | null): string {
   return JSON.stringify(normalizeCommandTags(tags, body, language))
+}
+
+export function stripRichTextImageSourcesForMetadata(body: string): string {
+  return String(body || '').replace(RICHTEXT_IMAGE_TAG_RE, tag => tag.replace(RICHTEXT_IMAGE_SRC_ATTR_RE, 'src=$1[image]$1'))
 }
 
 function cleanTitleLine(line: string): string {

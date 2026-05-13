@@ -34,6 +34,7 @@ import {
     normalizeCommandLanguage,
     normalizeCommandTitle,
     serializeCommandTags,
+    stripRichTextImageSourcesForMetadata,
 } from '../../shared/command-metadata'
 export { slugify } from '../../shared/library-command'
 
@@ -848,10 +849,6 @@ function parseImageDataUri(src: string): { mimeType: string; buffer: Buffer } | 
         mimeType: mimeType.toLowerCase(),
         buffer: Buffer.from(payload, 'base64'),
     }
-}
-
-function stripRichTextImageSourcesForMetadata(body: string): string {
-    return body.replace(IMAGE_TAG_RE, tag => tag.replace(IMAGE_SRC_ATTR_RE, 'src=$1[image]$1'))
 }
 
 function getAttachmentExtension(mimeType: string): string {
