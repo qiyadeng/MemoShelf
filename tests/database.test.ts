@@ -58,6 +58,27 @@ describe('addCommand', () => {
         expect(command.language).toBe('bash')
     })
 
+    it('does not generate richtext tags from inline image data payloads', () => {
+        const body = '<p>Screenshot</p><img src="data:image/png;base64,api" alt="inline">'
+
+        db.addCommand({
+            title: '',
+            body: `  ${body}  `,
+            description: '',
+            tags: '',
+            language: 'richtext',
+            source: 'local',
+            library_id: null,
+            remote_path: null,
+        })
+
+        const [command] = db.getAllCommands()
+        expect(command.title).toBe(body)
+        expect(command.body).toBe(body)
+        expect(command.tags).toBe('[]')
+        expect(command.language).toBe('richtext')
+    })
+
     it('inserts multiple commands in one transaction', () => {
         const inserted = db.addCommands([
             {

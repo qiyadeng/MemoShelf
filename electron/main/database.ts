@@ -218,6 +218,8 @@ export function deleteCommandsByIds(ids: number[]): number {
 }
 // add a new command to DB
 const MAX_TITLE_LENGTH = 500
+const RICHTEXT_IMAGE_TAG_RE = /<img\b[^>]*>/gi
+const RICHTEXT_IMAGE_SRC_ATTR_RE = /\bsrc=(['"])(.*?)\1/i
 
 type DbCommandInput = {
     title?: unknown
@@ -238,14 +240,19 @@ function normalizeRequiredDbBody(body: unknown): string {
 function normalizeDbCommand(command: DbCommandInput): Pick<Command, 'title' | 'body' | 'description' | 'tags' | 'language'> {
     const body = normalizeRequiredDbBody(command.body)
     const language = normalizeCommandLanguage(command.language)
+    const tagSourceBody = language === 'richtext' ? stripRichTextImageSourcesForDbMetadata(body) : body
 
     return {
         title: normalizeCommandTitle(command.title, body).slice(0, MAX_TITLE_LENGTH),
         body,
         description: typeof command.description === 'string' ? command.description.trim() : '',
-        tags: serializeDbCommandTags(command.tags, body, language),
+        tags: serializeDbCommandTags(command.tags, tagSourceBody, language),
         language,
     }
+}
+
+function stripRichTextImageSourcesForDbMetadata(body: string): string {
+    return body.replace(RICHTEXT_IMAGE_TAG_RE, tag => tag.replace(RICHTEXT_IMAGE_SRC_ATTR_RE, 'src=$1[image]$1'))
 }
 
 function serializeDbCommandTags(tags: unknown, body: string, language: string): string {
