@@ -39,3 +39,6 @@ temp*.md
 
 # Local runtime/build caches
 .cache/
+
+# Local git worktrees
+.worktrees/
