@@ -1,23 +1,11 @@
 <template>
     <div v-if="show" class="modal-overlay" @click.self="$emit('cancel')">
-        <div class="modal-content">
+        <div class="modal-content" ref="modalContentRef">
             <div class ="modal-header">
                 <h2>{{ mode === 'add' ? 'Add New Command' : 'Edit Command' }}</h2>
                 <button class="close-button" @click="$emit('cancel')">x</button>
             </div>
             <div class="modal-body">
-                <div class="form-group">
-                    <label for="title">Title:</label>
-                    <input
-                        id="title"
-                        v-model="formData.title"
-                        type="text"
-                        placeholder="Enter command title"
-                        ref="titleInput"
-                        maxlength="500"
-                    />
-                </div>
-
                 <div class="form-group">
                     <div class="field-header">
                         <label for="body">Command:</label>
@@ -47,29 +35,43 @@
                         v-if="isCodeLanguage(formData.language)"
                         v-model="formData.body"
                         :language="formData.language"
-                        placeholder="Enter code..."
+                        placeholder="Paste or write the snippet..."
                     />
                     <!-- Markdown editor with toolbar -->
                     <MarkdownEditor
                         v-else-if="formData.language === 'markdown'"
                         v-model="formData.body"
-                        placeholder="Write markdown..."
+                        placeholder="Paste or write the snippet..."
                     />
                     <!-- Rich text WYSIWYG editor -->
                     <RichTextEditor
                         v-else-if="formData.language === 'richtext'"
                         v-model="formData.body"
-                        placeholder="Start typing..."
+                        placeholder="Paste or write the snippet..."
                     />
                     <!-- Plain text fallback -->
                     <textarea
                         v-else
                         id="body"
+                        ref="bodyTextareaRef"
                         v-model="formData.body"
-                        placeholder="Enter command body"
+                        placeholder="Paste or write the snippet..."
                         rows="10"
                         class="plain-textarea"
                     ></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="title">Title:</label>
+                    <input
+                        id="title"
+                        v-model="formData.title"
+                        type="text"
+                        placeholder="Auto-generated from the command"
+                        ref="titleInput"
+                        maxlength="500"
+                        @input="handleTitleInput"
+                    />
                 </div>
 
                 <div class="form-group">
@@ -80,7 +82,7 @@
                             ref="tagsInputRef"
                             v-model="tagsInput"
                             type="text"
-                            placeholder="e.g. git, docker, linux"
+                            placeholder="Auto-generated comma-separated tags"
                             @input="handleTagInput"
                             @keydown="handleTagKeydown"
                             @click="updateInlineSuggestion"
@@ -94,17 +96,6 @@
                             {{ inlineSuggestion }}
                         </div>
                     </div>
-                </div>
-
-                <div class="form-group">
-                    <div class="field-header">
-                        <label for="description">Description (Markdown - optional):</label>
-                    </div>
-                    <!-- Always-editable markdown editor -->
-                    <MarkdownEditor
-                        v-model="formData.description"
-                        placeholder="Add a description for this snippet (optional)..."
-                    />
                 </div>
             </div>
             <div class="modal-footer">
@@ -120,6 +111,7 @@
   import { ref, watch, nextTick, computed, onMounted, onUnmounted } from 'vue'
   import { getAllTags } from '../utils/tags'
   import { getInlineSuggestion } from '../utils/autocomplete'
+  import { generateCommandTags, normalizeCommandTitle, serializeCommandTags } from '../../shared/command-metadata'
   import CodeEditor from './CodeEditor.vue'
   import RichTextEditor from './RichTextEditor.vue'
   import MarkdownEditor from './MarkdownEditor.vue'
@@ -160,7 +152,11 @@
 
   const tagsInput = ref('')
   const titleInput = ref<HTMLInputElement>()
+  const bodyTextareaRef = ref<HTMLTextAreaElement>()
   const tagsInputRef = ref<HTMLInputElement>()
+  const modalContentRef = ref<HTMLElement>()
+  const titleManuallyEdited = ref(false)
+  const tagsManuallyEdited = ref(false)
 
   // Custom language dropdown
   const languageOpen = ref(false)
@@ -189,6 +185,7 @@
   const selectLanguage = (value: string) => {
     formData.value.language = value
     languageOpen.value = false
+    applyGeneratedMetadata()
   }
 
   const onClickOutsideDropdown = (e: MouseEvent) => {
@@ -202,7 +199,7 @@
 
   // Helper to determine editor type
   const isCodeLanguage = (language: string): boolean => {
-    const codeLangs = ['plaintext', 'yaml', 'javascript', 'typescript', 'python', 'html', 'css', 'bash', 'json', 'sql', 'go', 'rust', 'java']
+    const codeLangs = ['yaml', 'javascript', 'typescript', 'python', 'html', 'css', 'bash', 'json', 'sql', 'go', 'rust', 'java']
     return codeLangs.includes(language)
   }
 
@@ -216,41 +213,94 @@
   const inlineSuggestion = ref<string | null>(null)
   const cursorPosition = ref(0)
 
+  const clearInlineSuggestion = () => {
+    inlineSuggestion.value = null
+    cursorPosition.value = 0
+  }
+
+  const resetForm = () => {
+    formData.value = { title: '', body: '', description: '', language: 'plaintext' }
+    tagsInput.value = ''
+    titleManuallyEdited.value = false
+    tagsManuallyEdited.value = false
+    clearInlineSuggestion()
+  }
+
+  const parseStoredTags = (storedTags: string): string[] => {
+    try {
+      const tags = JSON.parse(storedTags || '[]')
+      return Array.isArray(tags) ? tags.filter((tag): tag is string => typeof tag === 'string') : []
+    } catch {
+      return []
+    }
+  }
+
+  const applyGeneratedMetadata = () => {
+    const body = formData.value.body
+    const hasBody = body.trim().length > 0
+
+    if (!titleManuallyEdited.value) {
+      formData.value.title = hasBody ? normalizeCommandTitle('', body) : ''
+    }
+
+    if (!tagsManuallyEdited.value) {
+      tagsInput.value = hasBody ? generateCommandTags(body, formData.value.language).join(', ') : ''
+      clearInlineSuggestion()
+    }
+  }
+
+  const focusBodyField = () => {
+    if (bodyTextareaRef.value) {
+      bodyTextareaRef.value.focus()
+      return
+    }
+
+    const editorTarget = modalContentRef.value?.querySelector<HTMLElement>(
+      '.code-editor .cm-content, .markdown-editor .cm-content, .rich-text-editor .ProseMirror'
+    )
+    editorTarget?.focus()
+  }
+
+  const handleTitleInput = () => {
+    titleManuallyEdited.value = true
+  }
+
+  watch(() => [formData.value.body, formData.value.language] as const, () => {
+    applyGeneratedMetadata()
+  })
+
   // Watch for prop changes to populate form
   watch(() => props.command, (newCommand) => {
     if (newCommand) {
+      const parsedTags = parseStoredTags(newCommand.tags)
+      titleManuallyEdited.value = newCommand.title.trim().length > 0
+      tagsManuallyEdited.value = parsedTags.length > 0
       formData.value = {
         title: newCommand.title,
         body: newCommand.body,
         description: newCommand.description || '',
         language: newCommand.language || 'plaintext'
       }
-      // Parse tags from JSON string
-      try {
-        const tags = JSON.parse(newCommand.tags)
-        tagsInput.value = Array.isArray(tags) ? tags.join(', ') : ''
-      } catch {
-        tagsInput.value = ''
-      }
-    } else {
-      // Reset form for add mode
-      formData.value = { title: '', body: '', description: '', language: 'plaintext' }
-      tagsInput.value = ''
+      tagsInput.value = parsedTags.join(', ')
+      applyGeneratedMetadata()
+    } else if (props.mode === 'add') {
+      resetForm()
     }
   }, { immediate: true })
 
-  // Focus title input when modal opens and clear form when closing
+  // Focus the body field when modal opens and clear add-mode state when closing
   watch(() => props.show, (isShown) => {
     if (isShown) {
+      if (props.mode === 'add') {
+        resetForm()
+      }
       nextTick(() => {
-        titleInput.value?.focus()
+        focusBodyField()
       })
     } else {
       languageOpen.value = false
-      // Modal is closing - clear form data for add mode to prevent persistence
       if (props.mode === 'add') {
-        formData.value = { title: '', body: '', description: '', language: 'plaintext' }
-        tagsInput.value = ''
+        resetForm()
       }
     }
   })
@@ -272,6 +322,7 @@
 
   // Handle tag input changes
   const handleTagInput = () => {
+    tagsManuallyEdited.value = true
     updateInlineSuggestion()
   }
 
@@ -288,6 +339,7 @@
       if (suggestion.completionText) {
         const newValue = input.substring(0, cursor) + suggestion.completionText + input.substring(cursor)
         tagsInput.value = newValue
+        tagsManuallyEdited.value = true
 
         // Move cursor to end of completed tag
         nextTick(() => {
@@ -344,23 +396,18 @@
 
   // Handle save
   const handleSave = () => {
-    if (!formData.value.title.trim() || !formData.value.body.trim()) {
-      alert('Title and Command are required!')
+    const body = formData.value.body.trim()
+
+    if (!body) {
+      alert('Command is required!')
       return
     }
 
-    // Convert tags input to JSON array, cap at 12
-    const tags = tagsInput.value
-      .split(',')
-      .map(tag => tag.trim())
-      .filter(tag => tag.length > 0)
-      .slice(0, 12)
-
     emit('save', {
-      title: formData.value.title.trim(),
-      body: formData.value.body.trim(),
-      description: formData.value.description.trim(),
-      tags: JSON.stringify(tags),
+      title: normalizeCommandTitle(formData.value.title, body),
+      body,
+      description: formData.value.description,
+      tags: serializeCommandTags(tagsInput.value, body, formData.value.language),
       language: formData.value.language
     })
   }
@@ -578,6 +625,4 @@
     outline: none;
     border-color: var(--accent);
   }
-  </style>   
-               
-            
+  </style>
