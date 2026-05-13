@@ -55,6 +55,35 @@ describe('command metadata generation', () => {
     )
   })
 
+  it('caps generated tags to the maximum stored count', () => {
+    const body = [
+      'git docker kubectl k8s',
+      'ssh curl https api',
+      'npm pnpm yarn node',
+      'python pip pytest',
+      'SELECT * FROM logs WHERE level = ERROR',
+      'postgres psql nginx terraform aws s3 ec2 lambda deploy release publish tail grep ping dig nslookup',
+    ].join('\n')
+
+    const tags = generateCommandTags(body, 'bash')
+
+    expect(tags).toHaveLength(MAX_COMMAND_TAGS)
+    expect(tags).toEqual([
+      'bash',
+      'git',
+      'docker',
+      'kubectl',
+      'kubernetes',
+      'ssh',
+      'curl',
+      'api',
+      'npm',
+      'pnpm',
+      'node',
+      'python',
+    ])
+  })
+
   it('generates database and log tags from SQL-like body text', () => {
     expect(generateCommandTags('SELECT * FROM logs WHERE level = ERROR', 'sql')).toEqual(['sql', 'database', 'logs'])
   })
