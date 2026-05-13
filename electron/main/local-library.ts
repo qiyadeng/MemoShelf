@@ -2163,20 +2163,46 @@ const DEBOUNCE_MS = 2000
 
 let onChangeCallback: ((libraryId: number, result: SyncResult) => void) | null = null
 
+type WatchedCommandFile = {
+    command: RemoteCommand
+    richTextTagsInput: string[] | string
+}
+
 /** Register a callback that fires after a file-watcher sync completes */
 export function onFileWatcherSync(cb: (libraryId: number, result: SyncResult) => void): void {
     onChangeCallback = cb
 }
 
 /** Read and validate a single command JSON file. Returns null if invalid. */
-async function readCommandFile(filePath: string): Promise<RemoteCommand | null> {
+async function readCommandFile(filePath: string): Promise<WatchedCommandFile | null> {
     try {
         const content = await fs.readFile(filePath, 'utf8')
-        return parseLibraryCommandFile(JSON.parse(content))
+        const parsed = JSON.parse(content) as Record<string, unknown>
+        const command = parseLibraryCommandFile(parsed)
+        if (!command) {
+            return null
+        }
+
+        return {
+            command,
+            richTextTagsInput: getRichTextWatcherTagsInput(parsed),
+        }
     } catch {
         // Invalid JSON or unreadable — skip
     }
     return null
+}
+
+function getRichTextWatcherTagsInput(input: Record<string, unknown>): string[] | string {
+    if (!Object.prototype.hasOwnProperty.call(input, 'tags')) {
+        return ''
+    }
+
+    if (Array.isArray(input.tags)) {
+        return input.tags.filter((tag): tag is string => typeof tag === 'string')
+    }
+
+    return typeof input.tags === 'string' ? input.tags : ''
 }
 
 /** Process batched file changes for a single library */
@@ -2221,10 +2247,14 @@ async function processBatch(libraryId: number): Promise<void> {
         }
 
         // File exists — read and validate
-        const command = await readCommandFile(filePath)
-        if (!command) continue
+        const commandFile = await readCommandFile(filePath)
+        if (!commandFile) continue
 
-        const dbCommand = toIndexedLibraryCommandData(command)
+        const { command } = commandFile
+        const commandForIndex = command.language === 'richtext'
+            ? { ...command, tags: commandFile.richTextTagsInput }
+            : command
+        const dbCommand = toIndexedLocalLibraryCommandData(commandForIndex as CommandFormData | RemoteCommand, folderPath)
 
         if (!existing) {
             // New file — add (skip if body already exists locally)

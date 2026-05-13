@@ -26,6 +26,9 @@ import {
     scanLocalFolder,
     setupDefaultWritableLocalLibrary,
     slugify,
+    startFileWatchers,
+    stopFileWatchers,
+    onFileWatcherSync,
     updateLibraryOrigin,
     updateLocalLibraryCommand,
 } from '../electron/main/local-library'
@@ -943,6 +946,57 @@ describe('local library CRUD', () => {
         expect(savedFile.tags).toEqual([])
         expect(savedFile.body).not.toContain('data:image')
         expect(savedFile.body).toContain('attachments/')
+    })
+
+    it('normalizes rich text metadata and attachment URLs from watcher updates', async () => {
+        const setup = await setupDefaultWritableLocalLibrary(tmpDir)
+
+        const createResult = await createLocalLibraryCommand({
+            title: 'Watcher Rich Text',
+            body: `<p>Before</p><img src="${TINY_PNG_DATA_URI}" alt="tiny">`,
+            description: '',
+            tags: '',
+            language: 'richtext',
+        })
+
+        expect(createResult.success).toBe(true)
+
+        const [createdCommand] = db.getRemoteCommands(setup.library.id)
+        const commandPath = path.join(tmpDir, createdCommand.remote_path as string)
+        const savedFile = JSON.parse(await fs.readFile(commandPath, 'utf8'))
+        const savedSrc = savedFile.body.match(/src="([^"]+)"/)?.[1] as string
+        const attachmentPath = path.join(tmpDir, savedSrc)
+
+        const watcherResult = new Promise<void>((resolve, reject) => {
+            const timeout = setTimeout(() => reject(new Error('Timed out waiting for watcher sync')), 10000)
+            onFileWatcherSync((libraryId, result) => {
+                if (libraryId !== setup.library.id) return
+                clearTimeout(timeout)
+                if (result.errors.length > 0) {
+                    reject(new Error(result.errors.join('; ')))
+                    return
+                }
+                resolve()
+            })
+        })
+
+        try {
+            startFileWatchers()
+
+            savedFile.body = `<p>Watcher update</p><img src="${savedSrc}" alt="tiny"><img src="data:image/png;base64,api" alt="inline">`
+            savedFile.tags = ''
+            savedFile.updated_at = '2099-01-01T00:00:00.000Z'
+            await fs.writeFile(commandPath, JSON.stringify(savedFile, null, 2) + '\n', 'utf8')
+
+            await watcherResult
+        } finally {
+            stopFileWatchers()
+            onFileWatcherSync(() => {})
+        }
+
+        const [updatedCommand] = db.getRemoteCommands(setup.library.id)
+        expect(updatedCommand.body).toContain(pathToFileURL(attachmentPath).href)
+        expect(updatedCommand.tags).toBe('[]')
     })
 
     it('cleans orphaned rich text attachments on update and delete', async () => {
