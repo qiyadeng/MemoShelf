@@ -243,9 +243,31 @@ function normalizeDbCommand(command: DbCommandInput): Pick<Command, 'title' | 'b
         title: normalizeCommandTitle(command.title, body).slice(0, MAX_TITLE_LENGTH),
         body,
         description: typeof command.description === 'string' ? command.description.trim() : '',
-        tags: serializeCommandTags(command.tags as string[] | string | null | undefined, body, language),
+        tags: serializeDbCommandTags(command.tags, body, language),
         language,
     }
+}
+
+function serializeDbCommandTags(tags: unknown, body: string, language: string): string {
+    if (language === 'richtext' && Array.isArray(tags) && tags.length === 0) {
+        return '[]'
+    }
+
+    if (language === 'richtext' && typeof tags === 'string') {
+        const trimmed = tags.trim()
+        if (trimmed) {
+            try {
+                const parsed = JSON.parse(trimmed)
+                if (Array.isArray(parsed) && parsed.length === 0) {
+                    return '[]'
+                }
+            } catch {
+                // Non-JSON strings continue through shared tag normalization.
+            }
+        }
+    }
+
+    return serializeCommandTags(tags as string[] | string | null | undefined, body, language)
 }
 
 export function addCommand(command: Omit<Command, 'id' | 'created_at' | 'updated_at'>): number {

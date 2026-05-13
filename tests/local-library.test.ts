@@ -920,6 +920,31 @@ describe('local library CRUD', () => {
         expect(updatedCommand.body).toContain(pathToFileURL(attachmentPath).href)
     })
 
+    it('does not generate rich text tags from inline image data payloads', async () => {
+        const setup = await setupDefaultWritableLocalLibrary(tmpDir)
+        const imageWithKeywordPayload = 'data:image/png;base64,api'
+
+        const createResult = await createLocalLibraryCommand({
+            title: '',
+            body: `<p>Screenshot attached</p><img src="${imageWithKeywordPayload}" alt="inline">`,
+            description: '',
+            tags: '',
+            language: 'richtext',
+        })
+
+        expect(createResult.success).toBe(true)
+
+        const [indexedCommand] = db.getRemoteCommands(setup.library.id)
+        expect(indexedCommand.tags).toBe('[]')
+        expect(indexedCommand.language).toBe('richtext')
+        expect(indexedCommand.body).not.toContain('data:image')
+
+        const savedFile = JSON.parse(await fs.readFile(path.join(tmpDir, indexedCommand.remote_path as string), 'utf8'))
+        expect(savedFile.tags).toEqual([])
+        expect(savedFile.body).not.toContain('data:image')
+        expect(savedFile.body).toContain('attachments/')
+    })
+
     it('cleans orphaned rich text attachments on update and delete', async () => {
         const setup = await setupDefaultWritableLocalLibrary(tmpDir)
 

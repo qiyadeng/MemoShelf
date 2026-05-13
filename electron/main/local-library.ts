@@ -69,12 +69,13 @@ function normalizeRequiredCommandBody(body: unknown): string {
 function normalizeCommandFormData(command: CommandFormData): CommandFormData {
     const body = normalizeRequiredCommandBody(command.body)
     const language = normalizeCommandLanguage(command.language)
+    const metadataBody = language === 'richtext' ? stripRichTextImageSourcesForMetadata(body) : body
 
     return {
-        title: normalizeCommandTitle(command.title, body),
+        title: normalizeCommandTitle(command.title, metadataBody),
         body,
         description: (command.description || '').trim(),
-        tags: serializeCommandTags(command.tags, body, language),
+        tags: serializeCommandTags(command.tags, metadataBody, language),
         language,
     }
 }
@@ -849,6 +850,10 @@ function parseImageDataUri(src: string): { mimeType: string; buffer: Buffer } | 
     }
 }
 
+function stripRichTextImageSourcesForMetadata(body: string): string {
+    return body.replace(IMAGE_TAG_RE, tag => tag.replace(IMAGE_SRC_ATTR_RE, 'src=$1[image]$1'))
+}
+
 function getAttachmentExtension(mimeType: string): string {
     switch (mimeType) {
         case 'image/jpeg':
@@ -1263,10 +1268,23 @@ function toIndexedLocalLibraryCommandData(command: CommandFormData | RemoteComma
         return toIndexedLibraryCommandData(command)
     }
 
-    return toIndexedLibraryCommandData({
-        ...command,
-        body: resolveRichTextAttachmentUrls(command.body, libraryRoot),
-    })
+    const body = normalizeRequiredCommandBody(command.body)
+    const metadataBody = stripRichTextImageSourcesForMetadata(body)
+    const language = normalizeCommandLanguage(command.language)
+
+    return {
+        title: normalizeCommandTitle(command.title, metadataBody),
+        body: resolveRichTextAttachmentUrls(body, libraryRoot),
+        description: (command.description || '').trim(),
+        tags: serializeCommandTags(command.tags, metadataBody, language),
+        language,
+        created_at: 'created_at' in command && typeof command.created_at === 'string'
+            ? command.created_at
+            : new Date().toISOString(),
+        updated_at: 'updated_at' in command && typeof command.updated_at === 'string'
+            ? command.updated_at
+            : new Date().toISOString(),
+    }
 }
 
 function buildLocalSyncPayload(
