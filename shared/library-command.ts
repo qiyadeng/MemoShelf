@@ -1,10 +1,15 @@
+import {
+  normalizeCommandLanguage,
+  normalizeCommandTags,
+  normalizeCommandTitle,
+} from './command-metadata'
 import type { LibraryCommand } from './types'
 
 type TagsInput = string[] | string | null | undefined
 
 export interface LibraryCommandInput {
   id?: string | null
-  title: string
+  title?: string | null
   body: string
   description?: string | null
   tags?: TagsInput
@@ -46,29 +51,21 @@ export function normalizeCommandId(value: unknown): string | null {
     : null
 }
 
-export function normalizeLibraryTags(tags: TagsInput): string[] {
-  const values = Array.isArray(tags)
-    ? tags
-    : typeof tags === 'string'
-      ? parseTagJson(tags)
-      : []
-
-  const normalized = values
-    .filter((tag): tag is string => typeof tag === 'string')
-    .map(tag => tag.trim().toLowerCase())
-    .filter(Boolean)
-
-  return [...new Set(normalized)]
+export function normalizeLibraryTags(tags: TagsInput, body = '', language: string | null | undefined = null): string[] {
+  return normalizeCommandTags(tags, body, language)
 }
 
 export function normalizeLibraryCommand(input: LibraryCommandInput, now = new Date().toISOString()): LibraryCommand & { id?: string } {
+  const body = input.body.trim()
+  const language = normalizeCommandLanguage(input.language)
+
   return {
     id: normalizeCommandId(input.id) || undefined,
-    title: input.title.trim(),
-    body: input.body.trim(),
+    title: normalizeCommandTitle(input.title, body),
+    body,
     description: (input.description || '').trim(),
-    tags: normalizeLibraryTags(input.tags),
-    language: normalizeLanguage(input.language),
+    tags: normalizeLibraryTags(input.tags, body, language),
+    language,
     created_at: normalizeTimestamp(input.created_at, now),
     updated_at: normalizeTimestamp(input.updated_at, now),
   }
@@ -118,13 +115,13 @@ export function parseLibraryCommandFile(input: unknown, now = new Date().toISOSt
   }
 
   const candidate = input as Record<string, unknown>
-  if (typeof candidate.title !== 'string' || typeof candidate.body !== 'string') {
+  if (typeof candidate.body !== 'string') {
     return null
   }
 
   const normalized = normalizeLibraryCommand({
     id: normalizeCommandId(candidate.id),
-    title: candidate.title,
+    title: typeof candidate.title === 'string' ? candidate.title : '',
     body: candidate.body,
     description: typeof candidate.description === 'string' ? candidate.description : '',
     tags: candidate.tags as TagsInput,
@@ -133,25 +130,11 @@ export function parseLibraryCommandFile(input: unknown, now = new Date().toISOSt
     updated_at: typeof candidate.updated_at === 'string' ? candidate.updated_at : null,
   }, now)
 
-  if (!normalized.title || !normalized.body) {
+  if (!normalized.body) {
     return null
   }
 
   return normalized
-}
-
-function parseTagJson(tags: string): string[] {
-  try {
-    const parsed = JSON.parse(tags)
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
-}
-
-function normalizeLanguage(language: string | null | undefined): string {
-  const normalized = typeof language === 'string' ? language.trim().toLowerCase() : ''
-  return normalized || 'plaintext'
 }
 
 function normalizeTimestamp(value: string | null | undefined, fallback: string): string {

@@ -2,8 +2,13 @@
  * Utility functions for importing and exporting commands
  */
 
-import { filterCommandsByTags, normalizeTags, tagsToJson } from './tags'
+import {
+  normalizeCommandLanguage,
+  normalizeCommandTitle,
+  serializeCommandTags,
+} from '../../shared/command-metadata'
 import type { Command } from '../../shared/types'
+import { filterCommandsByTags, normalizeTags } from './tags'
 
 // Security limits to prevent DoS attacks
 const MAX_COMMANDS = 50000 // Maximum number of commands in a single import
@@ -12,7 +17,7 @@ const MAX_BODY_LENGTH = 1000000 // Maximum body length (1MB of text)
 const MAX_DESCRIPTION_LENGTH = 10000 // Maximum description length
 
 export interface ExportCommand {
-  title: string
+  title?: string
   body: string
   description: string
   tags: string[]
@@ -110,16 +115,19 @@ export function importCommands(exportData: ExportData): ImportCommand[] {
   }
 
   return exportData.commands.map(command => {
-    if (!command.title || !command.body) {
-      throw new Error(`Invalid command: missing title or body`)
+    if (!command.body || typeof command.body !== 'string') {
+      throw new Error(`Invalid command: missing body`)
     }
 
+    const body = command.body.trim()
+    const language = normalizeCommandLanguage(command.language)
+
     return {
-      title: command.title.trim(),
-      body: command.body.trim(),
+      title: normalizeCommandTitle(command.title, body),
+      body,
       description: (command.description || '').trim(),
-      tags: tagsToJson(command.tags || []),
-      language: command.language || 'plaintext'
+      tags: serializeCommandTags(command.tags || [], body, language),
+      language,
     }
   })
 }
@@ -140,17 +148,17 @@ export function validateExportData(data: any): data is ExportData {
     throw new Error('This is a library manifest — use "Open Folder" in Libraries settings to import a library')
   }
   if (data.snipforge === 'command') {
-    // Single command file — wrap as a bundle for import
-    if (typeof data.title === 'string' && typeof data.body === 'string') {
+    // Single command file: wrap as a bundle for import
+    if (typeof data.body === 'string') {
       data.commands = [data]
       data.version = '1.0'
       return true
     }
-    throw new Error('Invalid command file: missing title or body')
+    throw new Error('Invalid command file: missing body')
   }
 
-  // Heuristic: bare command file (no identifier, but has title+body and no commands array)
-  if (!data.snipforge && typeof data.title === 'string' && typeof data.body === 'string' && !data.commands) {
+  // Heuristic: bare command file (no identifier, but has body and no commands array)
+  if (!data.snipforge && typeof data.body === 'string' && !data.commands) {
     data.commands = [data]
     data.version = '1.0'
     return true
@@ -176,8 +184,8 @@ export function validateExportData(data: any): data is ExportData {
       throw new Error(`Invalid command at index ${index}: not an object`)
     }
 
-    if (!command.title || typeof command.title !== 'string') {
-      throw new Error(`Invalid command at index ${index}: missing or invalid title`)
+    if (command.title && typeof command.title !== 'string') {
+      throw new Error(`Invalid command at index ${index}: title must be a string`)
     }
 
     if (!command.body || typeof command.body !== 'string') {
@@ -189,7 +197,7 @@ export function validateExportData(data: any): data is ExportData {
     }
 
     // Security: Validate field lengths to prevent DoS
-    if (command.title.length > MAX_TITLE_LENGTH) {
+    if (typeof command.title === 'string' && command.title.length > MAX_TITLE_LENGTH) {
       throw new Error(`Command at index ${index}: title too long (${command.title.length} > ${MAX_TITLE_LENGTH})`)
     }
 

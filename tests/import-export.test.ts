@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { exportCommands, generateExportFilename, prepareExportBundle } from '../src/utils/importExport'
+import { exportCommands, generateExportFilename, importCommands, prepareExportBundle, validateExportData } from '../src/utils/importExport'
 import type { Command } from '../shared/types'
 
 function makeCommand(overrides: Partial<Command> = {}): Command {
@@ -112,5 +112,52 @@ describe('prepareExportBundle', () => {
         expect(bundle.content).toBe(JSON.stringify(bundle.exportData, null, 2))
         expect(bundle.exportData.total_commands).toBe(2)
         expect(bundle.exportData.snipforge).toBe('bundle')
+    })
+})
+
+describe('importCommands', () => {
+    it('generates title and tags for titleless command imports', () => {
+        const data = {
+            snipforge: 'bundle',
+            version: '2.0',
+            exported_at: '2026-05-13T00:00:00.000Z',
+            total_commands: 1,
+            commands: [
+                {
+                    body: 'kubectl get pods -A',
+                    description: '',
+                    tags: [],
+                    language: 'bash',
+                    created_at: '2026-05-13T00:00:00.000Z',
+                    updated_at: '2026-05-13T00:00:00.000Z',
+                },
+            ],
+        }
+
+        validateExportData(data)
+        expect(importCommands(data)).toEqual([
+            {
+                title: 'kubectl get pods -A',
+                body: 'kubectl get pods -A',
+                description: '',
+                tags: '["bash","kubectl","kubernetes"]',
+                language: 'bash',
+            },
+        ])
+    })
+
+    it('accepts a bare single command file with only body and language', () => {
+        const data: any = {
+            body: 'git status --short',
+            language: 'bash',
+        }
+
+        expect(validateExportData(data)).toBe(true)
+        expect(importCommands(data)[0]).toMatchObject({
+            title: 'git status --short',
+            body: 'git status --short',
+            tags: '["bash","git"]',
+            language: 'bash',
+        })
     })
 })
