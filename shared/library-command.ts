@@ -129,6 +129,9 @@ export function parseLibraryCommandFile(input: unknown, now = new Date().toISOSt
   if (!candidate.body.trim()) {
     return null
   }
+  if (Object.prototype.hasOwnProperty.call(candidate, 'title') && typeof candidate.title !== 'string') {
+    return null
+  }
 
   const normalized = normalizeLibraryCommand({
     id: normalizeCommandId(candidate.id),

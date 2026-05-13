@@ -133,4 +133,16 @@ describe('library command normalization', () => {
       language: 'bash',
     })).toBeNull()
   })
+
+  it('returns null for parsed command files with present non-string titles', () => {
+    expect(parseLibraryCommandFile({
+      title: null,
+      body: 'git status',
+    })).toBeNull()
+
+    expect(parseLibraryCommandFile({
+      title: 0,
+      body: 'git status',
+    })).toBeNull()
+  })
 })
