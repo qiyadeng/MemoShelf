@@ -2,13 +2,13 @@
     <div v-if="show" class="modal-overlay" @click.self="$emit('cancel')">
         <div class="modal-content" ref="modalContentRef">
             <div class ="modal-header">
-                <h2>{{ mode === 'add' ? 'Add New Command' : 'Edit Command' }}</h2>
+                <h2>{{ mode === 'add' ? 'Add New Memory' : 'Edit Memory' }}</h2>
                 <button class="close-button" @click="$emit('cancel')">x</button>
             </div>
             <div class="modal-body">
                 <div class="form-group">
                     <div class="field-header">
-                        <label for="body">Command:</label>
+                        <label for="body">Body:</label>
                         <div class="language-dropdown" ref="languageDropdownRef">
                             <button
                                 type="button"
@@ -67,7 +67,7 @@
                         id="title"
                         v-model="formData.title"
                         type="text"
-                        placeholder="Auto-generated from the command"
+                        placeholder="Auto-generated from the body"
                         ref="titleInput"
                         maxlength="500"
                         @input="handleTitleInput"
@@ -101,7 +101,7 @@
             <div class="modal-footer">
                 <button @click="$emit('cancel')" class="cancel-button">Cancel</button>
                 <button @click="handleSave" class="save-button">
-                    {{ mode === 'add' ? 'Add Command' : 'Save Changes' }}
+                    {{ mode === 'add' ? 'Add Memory' : 'Save Changes' }}
                 </button>
             </div>
         </div>
@@ -414,7 +414,7 @@
     const metadataBody = metadataBodyForCurrentForm(body)
 
     if (!body) {
-      alert('Command is required!')
+      alert('Body is required!')
       return
     }
 

@@ -1,9 +1,9 @@
 // @see https://www.electron.build/configuration/configuration
 {
   "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
-  "appId": "com.snipforge.app",
+  "appId": "com.memoshelf.app",
   "asar": true,
-  "productName": "SnipForge",
+  "productName": "MemoShelf",
   "icon": "build/icon",
   "directories": {
     "output": "release/${version}"

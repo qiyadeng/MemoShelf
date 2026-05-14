@@ -8,7 +8,7 @@ const status = ref<StatusWithBanner>({
   currentVersion: '',
   latestVersion: null,
   updateAvailable: false,
-  releaseUrl: 'https://snipforge.dev',
+  releaseUrl: 'https://github.com/qiyadeng/MemoShelf/releases/latest',
   lastChecked: null,
   showBanner: false,
 })

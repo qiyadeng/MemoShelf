@@ -363,7 +363,7 @@ const managementContextNote = computed(() => {
   if (isWritableLocalLibrary(props.library)) {
     return 'Manage this library’s command set here. Repo workflow stays available as a separate secondary area.'
   }
-  return 'This library is read-only in SnipForge. You can filter, review, and export commands here, while repo actions stay separate.'
+  return 'This library is read-only in MemoShelf. You can filter, review, and export items here, while repo actions stay separate.'
 })
 const changesSummary = computed(() => {
   if (!props.library) {

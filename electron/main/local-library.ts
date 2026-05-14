@@ -551,7 +551,7 @@ export async function getLibraryGitWorkflowSummary(
         const prReason = !context.currentBranch
             ? branchMissingReason
             : !context.defaultBranch
-                ? 'SnipForge could not determine the base branch for this origin.'
+                ? 'MemoShelf could not determine the base branch for this origin.'
                 : context.currentBranch === context.defaultBranch
                     ? 'Create or switch to a feature branch before opening a pull request.'
                     : null
@@ -563,7 +563,7 @@ export async function getLibraryGitWorkflowSummary(
             } catch {
                 pullRequestAction = createWorkflowAction(
                     true,
-                    'GitHub CLI is unavailable, so SnipForge will open the compare page in your browser instead.'
+                    'GitHub CLI is unavailable, so MemoShelf will open the compare page in your browser instead.'
                 )
             }
         } else {
@@ -755,7 +755,7 @@ export async function openLibraryPullRequest(
     }
 
     if (!context.defaultBranch) {
-        return { success: false, blocked: true, error: 'SnipForge could not determine the base branch for this origin.' }
+        return { success: false, blocked: true, error: 'MemoShelf could not determine the base branch for this origin.' }
     }
 
     if (context.currentBranch === context.defaultBranch) {
@@ -764,7 +764,7 @@ export async function openLibraryPullRequest(
 
     const url = buildCompareUrl(context)
     if (!url) {
-        return { success: false, blocked: true, error: 'SnipForge could not build a pull request URL for this library.' }
+        return { success: false, blocked: true, error: 'MemoShelf could not build a pull request URL for this library.' }
     }
 
     try {
@@ -1631,7 +1631,7 @@ export async function scanLocalFolder(folderPath: string): Promise<ScanResult> {
     try {
         manifestContent = await fs.readFile(manifestPath, 'utf8')
     } catch {
-        throw new Error('Not a SnipForge library — missing .snipforge.json manifest')
+        throw new Error('Not a MemoShelf-compatible library — missing .snipforge.json manifest')
     }
 
     let manifest: LibraryManifest
@@ -1974,7 +1974,7 @@ export async function relinkOriginLibraryToFolder(libraryId: number, folderPath:
     }
 
     if (context.workingTree.state === 'not_repo' || context.workingTree.state === 'no_working_copy') {
-        throw new Error('Choose a SnipForge library folder that lives inside a real git working tree.')
+        throw new Error('Choose a MemoShelf library folder that lives inside a real git working tree.')
     }
 
     if (!context.githubRepo) {
@@ -2086,7 +2086,7 @@ export interface ExportLibraryInput {
 }
 
 /**
- * Creates a zip file containing a SnipForge library (manifest + command JSONs).
+ * Creates a zip file containing a MemoShelf-compatible library (manifest + command JSONs).
  * Returns the path to the temporary zip file. Caller is responsible for cleanup.
  */
 export async function exportAsLibrary(input: ExportLibraryInput): Promise<string> {

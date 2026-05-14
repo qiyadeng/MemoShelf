@@ -342,10 +342,10 @@ export function seedTestData(): void {
 
     //sample welcome command
     insertCommand.run(
-        'Welcome to SnipForge!',
+        'Welcome to MemoShelf!',
         'You can create snippets in plain text or markdown, and add variables with the following syntax {{variable name}}. Read the help section for more.',
         'This section is used to describe your snippets and it also supports markdown, cool right?',
-        '["snipforge", "by_artluxdm"]',
+        '["memoshelf", "welcome"]',
         'markdown',
         now,
         now

@@ -1,21 +1,23 @@
 {
-  "name": "snipforge",
-  "version": "2.13.1",
+  "name": "memoshelf",
+  "version": "0.1.0",
   "main": "dist-electron/main/index.js",
-  "description": "A desktop app for saving, searching, and managing command snippets.",
+  "description": "A lightweight memory shelf for things you may need again.",
   "author": "Artluxdm",
   "license": "AGPL-3.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ArtluxDM/SnipForge.git"
+    "url": "https://github.com/qiyadeng/MemoShelf.git"
   },
-  "homepage": "https://github.com/ArtluxDM/SnipForge",
+  "homepage": "https://github.com/qiyadeng/MemoShelf",
   "keywords": [
     "electron",
     "vue3",
     "vite",
+    "memory",
     "snippets",
-    "commands",
+    "notes",
+    "clipboard",
     "productivity",
     "developer-tools"
   ],
@@ -26,6 +28,7 @@
   },
   "type": "module",
   "bin": {
+    "memoshelf": "./bin/snipforge.mjs",
     "snipforge": "./bin/snipforge.mjs"
   },
   "scripts": {
@@ -33,6 +36,8 @@
     "dev": "node scripts/dev-app.mjs",
     "dev:debug": "node scripts/dev-app.mjs 9222",
     "build": "vue-tsc --noEmit && vite build && electron-builder",
+    "build:fast": "node scripts/fast-build.mjs",
+    "build:app": "node scripts/fast-build.mjs --package",
     "preview": "vite preview",
     "test:db": "node scripts/test-db.mjs",
     "test": "vitest run",

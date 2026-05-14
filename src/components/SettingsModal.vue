@@ -73,7 +73,7 @@
           <div class="settings-section">
             <h3>Global Hotkey</h3>
             <p class="section-description">
-              Keyboard shortcut to show/hide SnipForge from anywhere.
+              Keyboard shortcut to show/hide MemoShelf from anywhere.
             </p>
             <div class="hotkey-picker">
               <button
@@ -100,7 +100,7 @@
             <div class="toggle-row">
               <div class="toggle-label">
                 <span class="toggle-title">Tag pills</span>
-                <span class="toggle-desc">Show tags as pills on commands in the list</span>
+                <span class="toggle-desc">Show tags as pills on saved items in the list</span>
               </div>
               <button
                 class="toggle-switch"
@@ -177,7 +177,7 @@
           <div class="settings-section" style="border-bottom: none;">
             <h3>Connected Services</h3>
             <p class="section-description">
-              External services that SnipForge can sync with.
+              External services that MemoShelf can sync with.
             </p>
 
             <div class="connector-list">
@@ -340,7 +340,7 @@
                   <strong>{{ writableLibrariesCount }}</strong>
                 </div>
                 <div class="library-stat-chip">
-                  <span class="library-stat-chip__label">Commands</span>
+                  <span class="library-stat-chip__label">Items</span>
                   <strong>{{ totalLibraryCommands }}</strong>
                 </div>
               </div>
@@ -356,7 +356,7 @@
                   Not configured yet
                 </span>
                 <span class="section-description">
-                  SnipForge remembers this local folder as the default writable library.
+                  MemoShelf remembers this local folder as the default writable library.
                 </span>
               </div>
               <button
@@ -476,7 +476,7 @@
                       @click="openInitModal(lib)"
                       class="library-action-btn init"
                       :disabled="initializing"
-                      title="Initialize as SnipForge library"
+                      title="Initialize as MemoShelf library"
                     >
                       Init
                     </button>
@@ -722,7 +722,7 @@ const updateStatus = ref<StatusWithBanner>({
   currentVersion: '',
   latestVersion: null,
   updateAvailable: false,
-  releaseUrl: 'https://snipforge.dev',
+  releaseUrl: 'https://github.com/qiyadeng/MemoShelf/releases/latest',
   lastChecked: null,
   showBanner: false,
 })
@@ -858,11 +858,11 @@ const DEFAULT_SHORTCUTS: Record<string, string> = {
 const shortcutActions = [
   { id: 'navigate.up', label: 'Navigate up' },
   { id: 'navigate.down', label: 'Navigate down' },
-  { id: 'action.copy', label: 'Copy command' },
+  { id: 'action.copy', label: 'Copy memory' },
   { id: 'action.copyTemplate', label: 'Copy template' },
-  { id: 'action.new', label: 'New command' },
-  { id: 'action.edit', label: 'Edit command' },
-  { id: 'action.delete', label: 'Delete command' },
+  { id: 'action.new', label: 'New memory' },
+  { id: 'action.edit', label: 'Edit memory' },
+  { id: 'action.delete', label: 'Delete memory' },
 ]
 
 const currentShortcuts = computed(() => {
