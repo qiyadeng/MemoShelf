@@ -3,6 +3,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { refDebounced } from '@vueuse/core'
 import CommandModal from './components/CommandModal.vue'
+import QuickCaptureModal from './components/QuickCaptureModal.vue'
 import VariableInputModal from './components/VariableInputModal.vue'
 import SettingsModal from './components/SettingsModal.vue'
 import HelpModal from './components/HelpModal.vue'
@@ -10,13 +11,14 @@ import DescriptionModal from './components/DescriptionModal.vue'
 import TagSelector from './components/TagSelector.vue'
 import DuplicateResolutionModal from './components/DuplicateResolutionModal.vue'
 import UpdateBanner from './components/UpdateBanner.vue'
-import { Copy, Edit, Trash2, HelpCircle, Settings, Anvil, CirclePlus } from 'lucide-vue-next'
+import { Copy, Edit, Trash2, HelpCircle, Settings, Anvil, CirclePlus, ClipboardPenLine } from 'lucide-vue-next'
 import { VList } from 'virtua/vue'
 import { extractVariables, substituteVariables, hasVariables, highlightVariables, type VariableValues } from './utils/variables'
 import { useSettings } from './composables/useSettings'
 import { prepareExportBundle, importCommands, validateExportData, detectDuplicates, type DuplicateMatch, type ImportCommand } from './utils/importExport'
 import { fuzzySearchCommands } from './utils/fuzzySearch'
 import { getAllTags, matchesTagFilter } from './utils/tags'
+import { getQuickCaptureClipboardText } from './utils/quickCapture'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import hljs from 'highlight.js'
@@ -44,6 +46,9 @@ try {
 // Note: (window.electronAPI as any) is needed because vue-tsc can't resolve
 // the 'window' property from the preload's declare global via project references
 const minimizeWindow = async () => {
+  if (showQuickCaptureModal.value) {
+    quickCaptureModalRef.value?.close()
+  }
   if ((window.electronAPI as any)?.window) {
     await (window.electronAPI as any).window.minimize()
   }
@@ -58,6 +63,9 @@ const maximizeWindow = async () => {
 }
 
 const closeWindow = async () => {
+  if (showQuickCaptureModal.value) {
+    quickCaptureModalRef.value?.close()
+  }
   if ((window.electronAPI as any)?.window) {
     await (window.electronAPI as any).window.close()
   }
@@ -106,6 +114,9 @@ const libraries = ref<Map<number, Library>>(new Map())
 const showModal = ref(false)
 const modalMode = ref<'add' | 'edit'>('add')
 const selectedCommandForEdit = ref<Command | null>(null)
+const showQuickCaptureModal = ref(false)
+const quickCaptureModalRef = ref<InstanceType<typeof QuickCaptureModal>>()
+let quickCaptureClosing = false
 
 // Variable input modal state
 const showVariableModal = ref(false)
@@ -234,6 +245,7 @@ const outsideClickHandler = (event: MouseEvent) => {
 }
 
 let cleanupWindowShown: (() => void) | null = null
+let cleanupWindowHidden: (() => void) | null = null
 let cleanupCommandsChanged: (() => void) | null = null
 
 onMounted(async () => {
@@ -262,6 +274,12 @@ onMounted(async () => {
       }, 100)
     })
 
+    cleanupWindowHidden = window.electronAPI.onWindowHidden(() => {
+      if (showQuickCaptureModal.value) {
+        quickCaptureModalRef.value?.close()
+      }
+    })
+
     // Reload commands when file watcher detects library changes
     cleanupCommandsChanged = window.electronAPI.onCommandsChanged(() => {
       loadCommands()
@@ -276,6 +294,7 @@ onUnmounted(() => {
   document.removeEventListener('keydown', handleKeyboard)
   document.removeEventListener('mousedown', outsideClickHandler, true)
   if (cleanupWindowShown) cleanupWindowShown()
+  if (cleanupWindowHidden) cleanupWindowHidden()
   if (cleanupCommandsChanged) cleanupCommandsChanged()
   if (notificationTimeout) clearTimeout(notificationTimeout)
 })
@@ -816,6 +835,32 @@ const deleteCommand = async (id: number) => {
     showModal.value = false
     selectedCommandForEdit.value = null
   }
+
+  const openQuickCaptureModal = () => {
+    showQuickCaptureModal.value = true
+  }
+
+  const handleQuickCaptureClose = async (text: string) => {
+    if (quickCaptureClosing) return
+    quickCaptureClosing = true
+    showQuickCaptureModal.value = false
+
+    const clipboardText = getQuickCaptureClipboardText(text)
+    if (!clipboardText) {
+      quickCaptureClosing = false
+      return
+    }
+
+    try {
+      await window.electronAPI.clipboard.writeText(clipboardText)
+      showNotificationToast('Copied to clipboard!')
+    } catch (error) {
+      console.error('Error copying quick capture to clipboard:', error)
+      showNotificationToast('Failed to copy capture')
+    } finally {
+      quickCaptureClosing = false
+    }
+  }
   
 // ── Shortcut Matching ──────────────────────────────────────────
 // Default shortcuts (duplicated from settings.ts to avoid main process import)
@@ -904,7 +949,7 @@ const handleKeyboard = (event: KeyboardEvent) => {
   }
 
   // Don't process hotkeys when modal is open or filter dropdown is open
-  if (showModal.value || showVariableModal.value || showSettingsModal.value || showHelpModal.value || showDescriptionModal.value || showDuplicateModal.value || showFilterDropdown.value) return
+  if (showModal.value || showQuickCaptureModal.value || showVariableModal.value || showSettingsModal.value || showHelpModal.value || showDescriptionModal.value || showDuplicateModal.value || showFilterDropdown.value) return
 
   // Don't process hotkeys when user is typing in an input field
   if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return
@@ -1057,6 +1102,9 @@ const openDescriptionModal = (title: string, description: string) => {
         <button class="add-button" @click="modalMode = 'add'; selectedCommandForEdit = null; showModal = true" title="Add new command (n)">
           <CirclePlus :size="18" />
         </button>
+        <button class="quick-capture-button" @click="openQuickCaptureModal" title="Quick capture to clipboard">
+          <ClipboardPenLine :size="17" />
+        </button>
         <button class="help-button" @click="showHelpModal = true" title="Help">
           <HelpCircle :size="16" />
         </button>
@@ -1186,6 +1234,13 @@ const openDescriptionModal = (title: string, description: string) => {
       :commands="commands"
       @save="handleModalSave"
       @cancel="handleModalCancel"
+    />
+
+    <!-- Quick Capture Modal -->
+    <QuickCaptureModal
+      ref="quickCaptureModalRef"
+      :show="showQuickCaptureModal"
+      @close="handleQuickCaptureClose"
     />
 
     <!-- Variable Input Modal -->
@@ -1469,6 +1524,7 @@ html, body, #app {
 
 /* Control buttons */
 .add-button,
+.quick-capture-button,
 .help-button,
 .settings-button {
   background: none;
@@ -1488,12 +1544,14 @@ html, body, #app {
 }
 
 .add-button:focus-visible,
+.quick-capture-button:focus-visible,
 .help-button:focus-visible,
 .settings-button:focus-visible {
   border-color: var(--accent);
 }
 
 .add-button:hover,
+.quick-capture-button:hover,
 .help-button:hover,
 .settings-button:hover {
   background-color: var(--bg-surface);

@@ -43,6 +43,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // window events
   onWindowShown: (callback: () => void) =>
     subscribeToSignal('window-shown', callback),
+  onWindowHidden: (callback: () => void) =>
+    subscribeToSignal('window-hidden', callback),
   onCommandsChanged: (callback: () => void) => {
     return subscribeToSignal('commands:changed', callback)
   },
@@ -180,6 +182,7 @@ declare global {
         showInputDialog: (title: string, label: string, defaultValue?: string) => Promise<{success: boolean, value: string | null}>
       },
       onWindowShown: (callback: () => void) => () => void,
+      onWindowHidden: (callback: () => void) => () => void,
       onCommandsChanged: (callback: () => void) => () => void,
       file: {
         saveDialog: (defaultFilename: string) => Promise<{success: boolean, filePath: string | null}>

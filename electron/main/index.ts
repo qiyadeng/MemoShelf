@@ -223,6 +223,12 @@ async function showWindow() {
   win.webContents.send('window-shown')
 }
 
+function notifyWindowHidden() {
+  if (win && !win.isDestroyed()) {
+    win.webContents.send('window-hidden')
+  }
+}
+
 
 async function toggleWindow() {
   if (!win || win.isDestroyed()) {
@@ -234,6 +240,7 @@ async function toggleWindow() {
   // Simple focus/minimize toggle
   if (win.isVisible() && win.isFocused()) {
     // If window is visible and focused, minimize it
+    notifyWindowHidden()
     win.minimize()
   } else {
     // Otherwise show and focus it
@@ -346,6 +353,7 @@ async function createWindow() {
     // But allow closing when the app is actually quitting
     if (!isAppQuiting) {
       event.preventDefault()
+      notifyWindowHidden()
       win.hide()
     }
   })
@@ -403,6 +411,7 @@ function createTray() {
     if (!win || win.isDestroyed()) {
       await createWindow()
     } else if (win.isVisible()) {
+      notifyWindowHidden()
       win.hide()
     } else {
       showWindow()
@@ -1188,6 +1197,7 @@ ipcMain.handle('update:remindLater', async () => {
 // IPC handlers for window controls
 ipcMain.handle('window:minimize', () => {
   if (win) {
+    notifyWindowHidden()
     win.minimize()
   }
 })
@@ -1204,6 +1214,7 @@ ipcMain.handle('window:maximize', () => {
 
 ipcMain.handle('window:close', () => {
   if (win) {
+    notifyWindowHidden()
     win.close()
   }
 })
