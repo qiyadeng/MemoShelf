@@ -1,9 +1,14 @@
 <template>
-    <div v-if="show" class="modal-overlay" @click.self="$emit('cancel')">
+    <div v-if="show" class="modal-overlay" @click.self="requestCancel">
         <div class="modal-content" ref="modalContentRef">
             <div class ="modal-header">
                 <h2>{{ mode === 'add' ? 'Add New Memory' : 'Edit Memory' }}</h2>
-                <button class="close-button" @click="$emit('cancel')">x</button>
+                <div class="modal-header-actions">
+                    <button type="button" @click="handleSave" class="save-button header-save-button">
+                        {{ mode === 'add' ? 'Add Memory' : 'Save Changes' }}
+                    </button>
+                    <button type="button" class="close-button" @click="requestCancel">x</button>
+                </div>
             </div>
             <div class="modal-body">
                 <div class="form-group">
@@ -99,8 +104,8 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button @click="$emit('cancel')" class="cancel-button">Cancel</button>
-                <button @click="handleSave" class="save-button">
+                <button type="button" @click="requestCancel" class="cancel-button">Cancel</button>
+                <button type="button" @click="handleSave" class="save-button">
                     {{ mode === 'add' ? 'Add Memory' : 'Save Changes' }}
                 </button>
             </div>
@@ -117,6 +122,10 @@
     serializeCommandTags,
     stripRichTextImageSourcesForMetadata
   } from '../../shared/command-metadata'
+  import {
+    commandModalDraftHasChanges,
+    type CommandModalDraft
+  } from '../utils/command-modal-draft'
   import CodeEditor from './CodeEditor.vue'
   import RichTextEditor from './RichTextEditor.vue'
   import MarkdownEditor from './MarkdownEditor.vue'
@@ -162,6 +171,13 @@
   const modalContentRef = ref<HTMLElement>()
   const titleManuallyEdited = ref(false)
   const tagsManuallyEdited = ref(false)
+  const closeBaseline = ref<CommandModalDraft>({
+    title: '',
+    body: '',
+    description: '',
+    tagsInput: '',
+    language: 'plaintext'
+  })
 
   // Custom language dropdown
   const languageOpen = ref(false)
@@ -231,6 +247,33 @@
     clearInlineSuggestion()
   }
 
+  const currentDraft = (): CommandModalDraft => ({
+    title: formData.value.title,
+    body: formData.value.body,
+    description: formData.value.description,
+    tagsInput: tagsInput.value,
+    language: formData.value.language
+  })
+
+  const setCloseBaseline = () => {
+    closeBaseline.value = currentDraft()
+  }
+
+  const hasUnsavedChanges = computed(() => {
+    return commandModalDraftHasChanges(currentDraft(), closeBaseline.value)
+  })
+
+  const requestCancel = () => {
+    languageOpen.value = false
+    clearInlineSuggestion()
+
+    if (hasUnsavedChanges.value && !window.confirm('Discard unsaved changes?')) {
+      return
+    }
+
+    emit('cancel')
+  }
+
   const parseStoredTags = (storedTags: string): string[] => {
     try {
       const tags = JSON.parse(storedTags || '[]')
@@ -297,8 +340,10 @@
       }
       tagsInput.value = parsedTags.join(', ')
       applyGeneratedMetadata()
+      setCloseBaseline()
     } else if (props.mode === 'add') {
       resetForm()
+      setCloseBaseline()
     }
   }, { immediate: true })
 
@@ -307,6 +352,7 @@
     if (isShown) {
       if (props.mode === 'add') {
         resetForm()
+        setCloseBaseline()
       }
       nextTick(() => {
         focusBodyField()
@@ -428,6 +474,10 @@
       language: formData.value.language
     })
   }
+
+  defineExpose({
+    requestCancel
+  })
   </script>
   <style scoped>
   /* Component-specific styles */
@@ -440,6 +490,18 @@
 
   .field-header label {
     margin-bottom: 0;
+  }
+
+  .modal-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .header-save-button {
+    padding: 8px 12px;
+    font-size: 13px;
+    white-space: nowrap;
   }
 
   .header-controls {

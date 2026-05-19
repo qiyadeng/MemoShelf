@@ -24,6 +24,8 @@ import type { CommandWithTags, Library } from '../shared/types'
 
 type Command = CommandWithTags
 
+const commandModalRef = ref<InstanceType<typeof CommandModal> | null>(null)
+
 // ── Settings ───────────────────────────────────────────────────
 const { settings } = useSettings()
 
@@ -870,7 +872,7 @@ const handleKeyboard = (event: KeyboardEvent) => {
     if (showVariableModal.value) {
       handleVariableCancel()
     } else if (showModal.value) {
-      handleModalCancel()
+      commandModalRef.value?.requestCancel()
     } else if (showDuplicateModal.value) {
       showDuplicateModal.value = false
     } else if (showSettingsModal.value) {
@@ -1180,6 +1182,7 @@ const openDescriptionModal = (title: string, description: string) => {
 
     <!-- Command Modal -->
     <CommandModal
+      ref="commandModalRef"
       :show="showModal"
       :mode="modalMode"
       :command="selectedCommandForEdit"
