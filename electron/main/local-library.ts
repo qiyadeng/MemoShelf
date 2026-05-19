@@ -30,6 +30,12 @@ import {
     slugify,
     toIndexedLibraryCommandData,
 } from '../../shared/library-command'
+import {
+    normalizeCommandLanguage,
+    normalizeCommandTitle,
+    serializeCommandTags,
+    stripRichTextImageSourcesForMetadata,
+} from '../../shared/command-metadata'
 export { slugify } from '../../shared/library-command'
 
 // ── Local Folder Scanning ────────────────────────────────────────
@@ -51,6 +57,33 @@ interface CommandFormData {
 interface RemoteLibraryMigrationOptions {
     runGit?: GitCommandRunner
     resolveCloneSource?: (owner: string, repo: string) => string
+}
+
+function normalizeRequiredCommandBody(body: unknown): string {
+    const normalized = typeof body === 'string' ? body.trim() : ''
+    if (!normalized) {
+        throw new Error('Command body is required')
+    }
+    return normalized
+}
+
+function normalizeCommandFormData(command: CommandFormData): CommandFormData {
+    const body = normalizeRequiredCommandBody(command.body)
+    const language = normalizeCommandLanguage(command.language)
+    const metadataBody = language === 'richtext' ? stripRichTextImageSourcesForMetadata(body) : body
+
+    return {
+        title: normalizeCommandTitle(command.title, metadataBody),
+        body,
+        description: (command.description || '').trim(),
+        tags: serializeCommandTags(command.tags, metadataBody, language),
+        language,
+    }
+}
+
+function getBatchCommandErrorTitle(command: CommandFormData): string {
+    const body = typeof command.body === 'string' ? command.body.trim() : ''
+    return normalizeCommandTitle(command.title, body)
 }
 
 const LIBRARY_ATTACHMENTS_DIR = 'attachments'
@@ -518,7 +551,7 @@ export async function getLibraryGitWorkflowSummary(
         const prReason = !context.currentBranch
             ? branchMissingReason
             : !context.defaultBranch
-                ? 'SnipForge could not determine the base branch for this origin.'
+                ? 'MemoShelf could not determine the base branch for this origin.'
                 : context.currentBranch === context.defaultBranch
                     ? 'Create or switch to a feature branch before opening a pull request.'
                     : null
@@ -530,7 +563,7 @@ export async function getLibraryGitWorkflowSummary(
             } catch {
                 pullRequestAction = createWorkflowAction(
                     true,
-                    'GitHub CLI is unavailable, so SnipForge will open the compare page in your browser instead.'
+                    'GitHub CLI is unavailable, so MemoShelf will open the compare page in your browser instead.'
                 )
             }
         } else {
@@ -722,7 +755,7 @@ export async function openLibraryPullRequest(
     }
 
     if (!context.defaultBranch) {
-        return { success: false, blocked: true, error: 'SnipForge could not determine the base branch for this origin.' }
+        return { success: false, blocked: true, error: 'MemoShelf could not determine the base branch for this origin.' }
     }
 
     if (context.currentBranch === context.defaultBranch) {
@@ -731,7 +764,7 @@ export async function openLibraryPullRequest(
 
     const url = buildCompareUrl(context)
     if (!url) {
-        return { success: false, blocked: true, error: 'SnipForge could not build a pull request URL for this library.' }
+        return { success: false, blocked: true, error: 'MemoShelf could not build a pull request URL for this library.' }
     }
 
     try {
@@ -1232,10 +1265,23 @@ function toIndexedLocalLibraryCommandData(command: CommandFormData | RemoteComma
         return toIndexedLibraryCommandData(command)
     }
 
-    return toIndexedLibraryCommandData({
-        ...command,
-        body: resolveRichTextAttachmentUrls(command.body, libraryRoot),
-    })
+    const body = normalizeRequiredCommandBody(command.body)
+    const metadataBody = stripRichTextImageSourcesForMetadata(body)
+    const language = normalizeCommandLanguage(command.language)
+
+    return {
+        title: normalizeCommandTitle(command.title, metadataBody),
+        body: resolveRichTextAttachmentUrls(body, libraryRoot),
+        description: (command.description || '').trim(),
+        tags: serializeCommandTags(command.tags, metadataBody, language),
+        language,
+        created_at: 'created_at' in command && typeof command.created_at === 'string'
+            ? command.created_at
+            : new Date().toISOString(),
+        updated_at: 'updated_at' in command && typeof command.updated_at === 'string'
+            ? command.updated_at
+            : new Date().toISOString(),
+    }
 }
 
 function buildLocalSyncPayload(
@@ -1323,9 +1369,10 @@ export async function createLocalLibraryCommand(command: CommandFormData): Promi
         }
     }
 
-    const fileName = await findUniqueCommandFileName(library.github_repo, command.title)
+    const normalizedCommand = normalizeCommandFormData(command)
+    const fileName = await findUniqueCommandFileName(library.github_repo, normalizedCommand.title)
     const createdAt = new Date().toISOString()
-    await writeCommandFile(library.github_repo, fileName, command, createdAt, createCommandId())
+    await writeCommandFile(library.github_repo, fileName, normalizedCommand, createdAt, createCommandId())
 
     const syncResult = await syncLocalLibrary(library.id, true)
     const updatedLibrary = db.getAllLibraries().find(l => l.id === library.id) || library
@@ -1352,13 +1399,16 @@ export async function createLocalLibraryCommands(commands: CommandFormData[]): P
     let succeeded = 0
 
     for (const command of commands) {
+        let errorTitle = getBatchCommandErrorTitle(command)
         try {
-            const fileName = await findUniqueCommandFileName(library.github_repo, command.title)
+            const normalizedCommand = normalizeCommandFormData(command)
+            errorTitle = normalizedCommand.title
+            const fileName = await findUniqueCommandFileName(library.github_repo, normalizedCommand.title)
             const createdAt = new Date().toISOString()
-            await writeCommandFile(library.github_repo, fileName, command, createdAt, createCommandId())
+            await writeCommandFile(library.github_repo, fileName, normalizedCommand, createdAt, createCommandId())
             succeeded += 1
         } catch (error) {
-            errors.push(`Failed to create "${command.title}": ${(error as Error).message}`)
+            errors.push(`Failed to create "${errorTitle}": ${(error as Error).message}`)
         }
     }
 
@@ -1390,6 +1440,7 @@ export async function createLocalLibraryCommands(commands: CommandFormData[]): P
 }
 
 export async function updateLocalLibraryCommand(commandId: number, updates: CommandFormData): Promise<CommandMutationResult> {
+    const normalizedUpdates = normalizeCommandFormData(updates)
     const target = resolveWritableFileBackedCommand(commandId)
     if (!target) {
         const readOnlyTarget = resolveLibraryBackedCommand(commandId)
@@ -1402,26 +1453,26 @@ export async function updateLocalLibraryCommand(commandId: number, updates: Comm
                 }
             }
 
-            const fileName = await findUniqueCommandFileName(library.github_repo, updates.title)
+            const fileName = await findUniqueCommandFileName(library.github_repo, normalizedUpdates.title)
             const createdAt = new Date().toISOString()
-            await writeCommandFile(library.github_repo, fileName, updates, createdAt, createCommandId())
+            await writeCommandFile(library.github_repo, fileName, normalizedUpdates, createdAt, createCommandId())
             const syncResult = await syncLocalLibrary(library.id, true)
             const updatedLibrary = db.getAllLibraries().find(l => l.id === library.id) || library
             return { success: true, mode: 'library', library: updatedLibrary, syncResult }
         }
 
         const success = db.updateCommand(commandId, {
-            title: updates.title,
-            body: updates.body,
-            description: updates.description,
-            tags: updates.tags,
-            language: updates.language,
+            title: normalizedUpdates.title,
+            body: normalizedUpdates.body,
+            description: normalizedUpdates.description,
+            tags: normalizedUpdates.tags,
+            language: normalizedUpdates.language,
         })
         return { success, mode: 'database' }
     }
 
     const currentFileName = target.command.remote_path
-    const nextFileName = await resolveUpdatedCommandFileName(target.library.github_repo, currentFileName, updates.title)
+    const nextFileName = await resolveUpdatedCommandFileName(target.library.github_repo, currentFileName, normalizedUpdates.title)
     const filePath = path.join(target.library.github_repo, currentFileName)
     const existing = await readLibraryCommandFileMetadata(filePath)
 
@@ -1436,7 +1487,7 @@ export async function updateLocalLibraryCommand(commandId: number, updates: Comm
     await writeCommandFile(
         target.library.github_repo,
         nextFileName,
-        updates,
+        normalizedUpdates,
         existing.created_at || target.command.created_at,
         existing.id || createCommandId()
     )
@@ -1580,7 +1631,7 @@ export async function scanLocalFolder(folderPath: string): Promise<ScanResult> {
     try {
         manifestContent = await fs.readFile(manifestPath, 'utf8')
     } catch {
-        throw new Error('Not a SnipForge library — missing .snipforge.json manifest')
+        throw new Error('Not a MemoShelf-compatible library — missing .snipforge.json manifest')
     }
 
     let manifest: LibraryManifest
@@ -1923,7 +1974,7 @@ export async function relinkOriginLibraryToFolder(libraryId: number, folderPath:
     }
 
     if (context.workingTree.state === 'not_repo' || context.workingTree.state === 'no_working_copy') {
-        throw new Error('Choose a SnipForge library folder that lives inside a real git working tree.')
+        throw new Error('Choose a MemoShelf library folder that lives inside a real git working tree.')
     }
 
     if (!context.githubRepo) {
@@ -2035,7 +2086,7 @@ export interface ExportLibraryInput {
 }
 
 /**
- * Creates a zip file containing a SnipForge library (manifest + command JSONs).
+ * Creates a zip file containing a MemoShelf-compatible library (manifest + command JSONs).
  * Returns the path to the temporary zip file. Caller is responsible for cleanup.
  */
 export async function exportAsLibrary(input: ExportLibraryInput): Promise<string> {
@@ -2109,20 +2160,46 @@ const DEBOUNCE_MS = 2000
 
 let onChangeCallback: ((libraryId: number, result: SyncResult) => void) | null = null
 
+type WatchedCommandFile = {
+    command: RemoteCommand
+    richTextTagsInput: string[] | string
+}
+
 /** Register a callback that fires after a file-watcher sync completes */
 export function onFileWatcherSync(cb: (libraryId: number, result: SyncResult) => void): void {
     onChangeCallback = cb
 }
 
 /** Read and validate a single command JSON file. Returns null if invalid. */
-async function readCommandFile(filePath: string): Promise<RemoteCommand | null> {
+async function readCommandFile(filePath: string): Promise<WatchedCommandFile | null> {
     try {
         const content = await fs.readFile(filePath, 'utf8')
-        return parseLibraryCommandFile(JSON.parse(content))
+        const parsed = JSON.parse(content) as Record<string, unknown>
+        const command = parseLibraryCommandFile(parsed)
+        if (!command) {
+            return null
+        }
+
+        return {
+            command,
+            richTextTagsInput: getRichTextWatcherTagsInput(parsed),
+        }
     } catch {
         // Invalid JSON or unreadable — skip
     }
     return null
+}
+
+function getRichTextWatcherTagsInput(input: Record<string, unknown>): string[] | string {
+    if (!Object.prototype.hasOwnProperty.call(input, 'tags')) {
+        return ''
+    }
+
+    if (Array.isArray(input.tags)) {
+        return input.tags.filter((tag): tag is string => typeof tag === 'string')
+    }
+
+    return typeof input.tags === 'string' ? input.tags : ''
 }
 
 /** Process batched file changes for a single library */
@@ -2167,10 +2244,14 @@ async function processBatch(libraryId: number): Promise<void> {
         }
 
         // File exists — read and validate
-        const command = await readCommandFile(filePath)
-        if (!command) continue
+        const commandFile = await readCommandFile(filePath)
+        if (!commandFile) continue
 
-        const dbCommand = toIndexedLibraryCommandData(command)
+        const { command } = commandFile
+        const commandForIndex = command.language === 'richtext'
+            ? { ...command, tags: commandFile.richTextTagsInput }
+            : command
+        const dbCommand = toIndexedLocalLibraryCommandData(commandForIndex as CommandFormData | RemoteCommand, folderPath)
 
         if (!existing) {
             // New file — add (skip if body already exists locally)

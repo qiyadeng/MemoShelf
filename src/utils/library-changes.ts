@@ -87,7 +87,7 @@ export function describeLibraryChanges(library: Library): LibraryChangesSummary 
     case 'error':
       return {
         headline: 'Unable to inspect working tree',
-        detail: library.working_tree.error || 'SnipForge hit an unexpected error while checking this library.',
+        detail: library.working_tree.error || 'MemoShelf hit an unexpected error while checking this library.',
         tone: 'danger',
         canSync,
         syncTitle: canSync

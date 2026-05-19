@@ -1,26 +1,19 @@
 <template>
-    <div v-if="show" class="modal-overlay" @click.self="$emit('cancel')">
-        <div class="modal-content">
+    <div v-if="show" class="modal-overlay" @click.self="requestCancel">
+        <div class="modal-content" ref="modalContentRef">
             <div class ="modal-header">
-                <h2>{{ mode === 'add' ? 'Add New Command' : 'Edit Command' }}</h2>
-                <button class="close-button" @click="$emit('cancel')">x</button>
+                <h2>{{ mode === 'add' ? 'Add New Memory' : 'Edit Memory' }}</h2>
+                <div class="modal-header-actions">
+                    <button type="button" @click="handleSave" class="save-button header-save-button">
+                        {{ mode === 'add' ? 'Add Memory' : 'Save Changes' }}
+                    </button>
+                    <button type="button" class="close-button" @click="requestCancel">x</button>
+                </div>
             </div>
             <div class="modal-body">
                 <div class="form-group">
-                    <label for="title">Title:</label>
-                    <input
-                        id="title"
-                        v-model="formData.title"
-                        type="text"
-                        placeholder="Enter command title"
-                        ref="titleInput"
-                        maxlength="500"
-                    />
-                </div>
-
-                <div class="form-group">
                     <div class="field-header">
-                        <label for="body">Command:</label>
+                        <label for="body">Body:</label>
                         <div class="language-dropdown" ref="languageDropdownRef">
                             <button
                                 type="button"
@@ -47,29 +40,43 @@
                         v-if="isCodeLanguage(formData.language)"
                         v-model="formData.body"
                         :language="formData.language"
-                        placeholder="Enter code..."
+                        placeholder="Paste or write the snippet..."
                     />
                     <!-- Markdown editor with toolbar -->
                     <MarkdownEditor
                         v-else-if="formData.language === 'markdown'"
                         v-model="formData.body"
-                        placeholder="Write markdown..."
+                        placeholder="Paste or write the snippet..."
                     />
                     <!-- Rich text WYSIWYG editor -->
                     <RichTextEditor
                         v-else-if="formData.language === 'richtext'"
                         v-model="formData.body"
-                        placeholder="Start typing..."
+                        placeholder="Paste or write the snippet..."
                     />
                     <!-- Plain text fallback -->
                     <textarea
                         v-else
                         id="body"
+                        ref="bodyTextareaRef"
                         v-model="formData.body"
-                        placeholder="Enter command body"
+                        placeholder="Paste or write the snippet..."
                         rows="10"
                         class="plain-textarea"
                     ></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="title">Title:</label>
+                    <input
+                        id="title"
+                        v-model="formData.title"
+                        type="text"
+                        placeholder="Auto-generated from the body"
+                        ref="titleInput"
+                        maxlength="500"
+                        @input="handleTitleInput"
+                    />
                 </div>
 
                 <div class="form-group">
@@ -80,7 +87,7 @@
                             ref="tagsInputRef"
                             v-model="tagsInput"
                             type="text"
-                            placeholder="e.g. git, docker, linux"
+                            placeholder="Auto-generated comma-separated tags"
                             @input="handleTagInput"
                             @keydown="handleTagKeydown"
                             @click="updateInlineSuggestion"
@@ -95,22 +102,11 @@
                         </div>
                     </div>
                 </div>
-
-                <div class="form-group">
-                    <div class="field-header">
-                        <label for="description">Description (Markdown - optional):</label>
-                    </div>
-                    <!-- Always-editable markdown editor -->
-                    <MarkdownEditor
-                        v-model="formData.description"
-                        placeholder="Add a description for this snippet (optional)..."
-                    />
-                </div>
             </div>
             <div class="modal-footer">
-                <button @click="$emit('cancel')" class="cancel-button">Cancel</button>
-                <button @click="handleSave" class="save-button">
-                    {{ mode === 'add' ? 'Add Command' : 'Save Changes' }}
+                <button type="button" @click="requestCancel" class="cancel-button">Cancel</button>
+                <button type="button" @click="handleSave" class="save-button">
+                    {{ mode === 'add' ? 'Add Memory' : 'Save Changes' }}
                 </button>
             </div>
         </div>
@@ -120,6 +116,16 @@
   import { ref, watch, nextTick, computed, onMounted, onUnmounted } from 'vue'
   import { getAllTags } from '../utils/tags'
   import { getInlineSuggestion } from '../utils/autocomplete'
+  import {
+    generateCommandTags,
+    normalizeCommandTitle,
+    serializeCommandTags,
+    stripRichTextImageSourcesForMetadata
+  } from '../../shared/command-metadata'
+  import {
+    commandModalDraftHasChanges,
+    type CommandModalDraft
+  } from '../utils/command-modal-draft'
   import CodeEditor from './CodeEditor.vue'
   import RichTextEditor from './RichTextEditor.vue'
   import MarkdownEditor from './MarkdownEditor.vue'
@@ -160,7 +166,18 @@
 
   const tagsInput = ref('')
   const titleInput = ref<HTMLInputElement>()
+  const bodyTextareaRef = ref<HTMLTextAreaElement>()
   const tagsInputRef = ref<HTMLInputElement>()
+  const modalContentRef = ref<HTMLElement>()
+  const titleManuallyEdited = ref(false)
+  const tagsManuallyEdited = ref(false)
+  const closeBaseline = ref<CommandModalDraft>({
+    title: '',
+    body: '',
+    description: '',
+    tagsInput: '',
+    language: 'plaintext'
+  })
 
   // Custom language dropdown
   const languageOpen = ref(false)
@@ -189,6 +206,7 @@
   const selectLanguage = (value: string) => {
     formData.value.language = value
     languageOpen.value = false
+    applyGeneratedMetadata()
   }
 
   const onClickOutsideDropdown = (e: MouseEvent) => {
@@ -202,7 +220,7 @@
 
   // Helper to determine editor type
   const isCodeLanguage = (language: string): boolean => {
-    const codeLangs = ['plaintext', 'yaml', 'javascript', 'typescript', 'python', 'html', 'css', 'bash', 'json', 'sql', 'go', 'rust', 'java']
+    const codeLangs = ['yaml', 'javascript', 'typescript', 'python', 'html', 'css', 'bash', 'json', 'sql', 'go', 'rust', 'java']
     return codeLangs.includes(language)
   }
 
@@ -216,41 +234,133 @@
   const inlineSuggestion = ref<string | null>(null)
   const cursorPosition = ref(0)
 
+  const clearInlineSuggestion = () => {
+    inlineSuggestion.value = null
+    cursorPosition.value = 0
+  }
+
+  const resetForm = () => {
+    formData.value = { title: '', body: '', description: '', language: 'plaintext' }
+    tagsInput.value = ''
+    titleManuallyEdited.value = false
+    tagsManuallyEdited.value = false
+    clearInlineSuggestion()
+  }
+
+  const currentDraft = (): CommandModalDraft => ({
+    title: formData.value.title,
+    body: formData.value.body,
+    description: formData.value.description,
+    tagsInput: tagsInput.value,
+    language: formData.value.language
+  })
+
+  const setCloseBaseline = () => {
+    closeBaseline.value = currentDraft()
+  }
+
+  const hasUnsavedChanges = computed(() => {
+    return commandModalDraftHasChanges(currentDraft(), closeBaseline.value)
+  })
+
+  const requestCancel = () => {
+    languageOpen.value = false
+    clearInlineSuggestion()
+
+    if (hasUnsavedChanges.value && !window.confirm('Discard unsaved changes?')) {
+      return
+    }
+
+    emit('cancel')
+  }
+
+  const parseStoredTags = (storedTags: string): string[] => {
+    try {
+      const tags = JSON.parse(storedTags || '[]')
+      return Array.isArray(tags) ? tags.filter((tag): tag is string => typeof tag === 'string') : []
+    } catch {
+      return []
+    }
+  }
+
+  const metadataBodyForCurrentForm = (body = formData.value.body): string => {
+    if (formData.value.language === 'richtext') {
+      return stripRichTextImageSourcesForMetadata(body)
+    }
+
+    return body
+  }
+
+  const applyGeneratedMetadata = () => {
+    const body = formData.value.body
+    const metadataBody = metadataBodyForCurrentForm(body)
+    const hasBody = body.trim().length > 0
+
+    if (!titleManuallyEdited.value) {
+      formData.value.title = hasBody ? normalizeCommandTitle('', metadataBody) : ''
+    }
+
+    if (!tagsManuallyEdited.value) {
+      tagsInput.value = hasBody ? generateCommandTags(metadataBody, formData.value.language).join(', ') : ''
+      clearInlineSuggestion()
+    }
+  }
+
+  const focusBodyField = () => {
+    if (bodyTextareaRef.value) {
+      bodyTextareaRef.value.focus()
+      return
+    }
+
+    const editorTarget = modalContentRef.value?.querySelector<HTMLElement>(
+      '.code-editor .cm-content, .markdown-editor .cm-content, .rich-text-editor .ProseMirror'
+    )
+    editorTarget?.focus()
+  }
+
+  const handleTitleInput = () => {
+    titleManuallyEdited.value = true
+  }
+
+  watch(() => [formData.value.body, formData.value.language] as const, () => {
+    applyGeneratedMetadata()
+  })
+
   // Watch for prop changes to populate form
   watch(() => props.command, (newCommand) => {
     if (newCommand) {
+      const parsedTags = parseStoredTags(newCommand.tags)
+      titleManuallyEdited.value = newCommand.title.trim().length > 0
+      tagsManuallyEdited.value = parsedTags.length > 0
       formData.value = {
         title: newCommand.title,
         body: newCommand.body,
         description: newCommand.description || '',
         language: newCommand.language || 'plaintext'
       }
-      // Parse tags from JSON string
-      try {
-        const tags = JSON.parse(newCommand.tags)
-        tagsInput.value = Array.isArray(tags) ? tags.join(', ') : ''
-      } catch {
-        tagsInput.value = ''
-      }
-    } else {
-      // Reset form for add mode
-      formData.value = { title: '', body: '', description: '', language: 'plaintext' }
-      tagsInput.value = ''
+      tagsInput.value = parsedTags.join(', ')
+      applyGeneratedMetadata()
+      setCloseBaseline()
+    } else if (props.mode === 'add') {
+      resetForm()
+      setCloseBaseline()
     }
   }, { immediate: true })
 
-  // Focus title input when modal opens and clear form when closing
+  // Focus the body field when modal opens and clear add-mode state when closing
   watch(() => props.show, (isShown) => {
     if (isShown) {
+      if (props.mode === 'add') {
+        resetForm()
+        setCloseBaseline()
+      }
       nextTick(() => {
-        titleInput.value?.focus()
+        focusBodyField()
       })
     } else {
       languageOpen.value = false
-      // Modal is closing - clear form data for add mode to prevent persistence
       if (props.mode === 'add') {
-        formData.value = { title: '', body: '', description: '', language: 'plaintext' }
-        tagsInput.value = ''
+        resetForm()
       }
     }
   })
@@ -272,6 +382,7 @@
 
   // Handle tag input changes
   const handleTagInput = () => {
+    tagsManuallyEdited.value = true
     updateInlineSuggestion()
   }
 
@@ -288,6 +399,7 @@
       if (suggestion.completionText) {
         const newValue = input.substring(0, cursor) + suggestion.completionText + input.substring(cursor)
         tagsInput.value = newValue
+        tagsManuallyEdited.value = true
 
         // Move cursor to end of completed tag
         nextTick(() => {
@@ -344,26 +456,28 @@
 
   // Handle save
   const handleSave = () => {
-    if (!formData.value.title.trim() || !formData.value.body.trim()) {
-      alert('Title and Command are required!')
+    const body = formData.value.body.trim()
+    const metadataBody = metadataBodyForCurrentForm(body)
+
+    if (!body) {
+      alert('Body is required!')
       return
     }
 
-    // Convert tags input to JSON array, cap at 12
-    const tags = tagsInput.value
-      .split(',')
-      .map(tag => tag.trim())
-      .filter(tag => tag.length > 0)
-      .slice(0, 12)
-
     emit('save', {
-      title: formData.value.title.trim(),
-      body: formData.value.body.trim(),
-      description: formData.value.description.trim(),
-      tags: JSON.stringify(tags),
+      title: normalizeCommandTitle(formData.value.title, metadataBody),
+      body,
+      description: formData.value.description,
+      tags: tagsManuallyEdited.value && !tagsInput.value.trim()
+        ? '[]'
+        : serializeCommandTags(tagsInput.value, metadataBody, formData.value.language),
       language: formData.value.language
     })
   }
+
+  defineExpose({
+    requestCancel
+  })
   </script>
   <style scoped>
   /* Component-specific styles */
@@ -376,6 +490,18 @@
 
   .field-header label {
     margin-bottom: 0;
+  }
+
+  .modal-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .header-save-button {
+    padding: 8px 12px;
+    font-size: 13px;
+    white-space: nowrap;
   }
 
   .header-controls {
@@ -578,6 +704,4 @@
     outline: none;
     border-color: var(--accent);
   }
-  </style>   
-               
-            
+  </style>

@@ -3,10 +3,10 @@ import * as settings from './settings'
 import type { UpdateStatus } from '../../shared/types'
 
 // ── Configuration ────────────────────────────────────────────────
-const GITHUB_OWNER = 'ArtluxDM'
-const GITHUB_REPO = 'SnipForge'
+const GITHUB_OWNER = 'qiyadeng'
+const GITHUB_REPO = 'MemoShelf'
 const RELEASE_API = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`
-const DOWNLOAD_URL = 'https://snipforge.dev'
+const DOWNLOAD_URL = 'https://github.com/qiyadeng/MemoShelf/releases/latest'
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000 // 24 hours
 
 // ── State ────────────────────────────────────────────────────────
@@ -50,7 +50,7 @@ export async function checkForUpdate(): Promise<UpdateStatus> {
     const response = await fetch(RELEASE_API, {
       headers: {
         'Accept': 'application/vnd.github.v3+json',
-        'User-Agent': `SnipForge/${currentVersion}`,
+        'User-Agent': `MemoShelf/${currentVersion}`,
       },
       signal: controller.signal,
     })

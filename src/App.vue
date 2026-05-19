@@ -26,6 +26,8 @@ import type { CommandWithTags, Library } from '../shared/types'
 
 type Command = CommandWithTags
 
+const commandModalRef = ref<InstanceType<typeof CommandModal> | null>(null)
+
 // ── Settings ───────────────────────────────────────────────────
 const { settings } = useSettings()
 
@@ -915,7 +917,7 @@ const handleKeyboard = (event: KeyboardEvent) => {
     if (showVariableModal.value) {
       handleVariableCancel()
     } else if (showModal.value) {
-      handleModalCancel()
+      commandModalRef.value?.requestCancel()
     } else if (showDuplicateModal.value) {
       showDuplicateModal.value = false
     } else if (showSettingsModal.value) {
@@ -1058,7 +1060,7 @@ const openDescriptionModal = (title: string, description: string) => {
       <div class="left-section">
         <div class="traffic-light-space"></div>
         <div class="app-branding">
-          <h1 class="app-title">SnipForge</h1>
+          <h1 class="app-title">MemoShelf</h1>
           <Anvil class="app-icon" :size="20" />
         </div>
       </div>
@@ -1068,7 +1070,7 @@ const openDescriptionModal = (title: string, description: string) => {
         <div class="search-wrapper">
           <input type="text"
             ref="searchInputRef"
-            placeholder="search commands..."
+            placeholder="search memories..."
             v-model="searchQuery"
             @keydown="handleSearchKeyDown"
             @focus="selectedCommandId = null"
@@ -1099,7 +1101,7 @@ const openDescriptionModal = (title: string, description: string) => {
 
       <!-- Right section: Control buttons -->
       <div class="right-section">
-        <button class="add-button" @click="modalMode = 'add'; selectedCommandForEdit = null; showModal = true" title="Add new command (n)">
+        <button class="add-button" @click="modalMode = 'add'; selectedCommandForEdit = null; showModal = true" title="Add new memory (n)">
           <CirclePlus :size="18" />
         </button>
         <button class="quick-capture-button" @click="openQuickCaptureModal" title="Quick capture to clipboard">
@@ -1185,13 +1187,13 @@ const openDescriptionModal = (title: string, description: string) => {
               </div>
             </div>
             <div class="command-actions">
-              <button @click.stop="copyCommand(command)" tabindex="-1" title="Copy command">
+              <button @click.stop="copyCommand(command)" tabindex="-1" title="Copy memory">
                 <Copy :size="16" />
               </button>
-              <button @click.stop="editCommand(command.id)" tabindex="-1" title="Edit command">
+              <button @click.stop="editCommand(command.id)" tabindex="-1" title="Edit memory">
                 <Edit :size="16" />
               </button>
-              <button @click.stop="deleteCommand(command.id)" tabindex="-1" title="Delete command">
+              <button @click.stop="deleteCommand(command.id)" tabindex="-1" title="Delete memory">
                 <Trash2 :size="16" />
               </button>
             </div>
@@ -1209,7 +1211,7 @@ const openDescriptionModal = (title: string, description: string) => {
         <div class="first-run-badge">First run</div>
         <h2>Choose a default writable library</h2>
         <p>
-          SnipForge needs one local folder to own your command files. Pick a folder now and
+          MemoShelf needs one local folder to own your memory files. Pick a folder now and
           the app will create <code>.snipforge.json</code> there if needed.
         </p>
         <p v-if="firstRunSetupError" class="first-run-error">{{ firstRunSetupError }}</p>
@@ -1221,13 +1223,14 @@ const openDescriptionModal = (title: string, description: string) => {
           {{ firstRunSetupLoading ? 'Choosing...' : 'Choose Folder' }}
         </button>
         <p class="first-run-note">
-          This setup is required before you start adding commands.
+          This setup is required before you start adding memories.
         </p>
       </div>
     </div>
 
     <!-- Command Modal -->
     <CommandModal
+      ref="commandModalRef"
       :show="showModal"
       :mode="modalMode"
       :command="selectedCommandForEdit"

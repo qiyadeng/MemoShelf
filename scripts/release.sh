@@ -29,4 +29,4 @@ git tag "v$NEW_VERSION"
 git push && git push --tags
 
 echo "Done. GitHub Actions is building the release."
-echo "Draft will appear at: https://github.com/ArtluxDM/SnipForge/releases"
+echo "Draft will appear at: https://github.com/qiyadeng/MemoShelf/releases"

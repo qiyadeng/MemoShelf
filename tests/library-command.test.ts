@@ -75,4 +75,74 @@ describe('library command normalization', () => {
       updated_at: '2026-03-02T00:00:00.000Z',
     })
   })
+
+  it('parses command files without titles by generating metadata from the body', () => {
+    const result = parseLibraryCommandFile({
+      id: '550E8400-E29B-41D4-A716-446655440000',
+      body: '  kubectl get pods -A  ',
+      description: '',
+      tags: [],
+      language: 'bash',
+      created_at: '2026-02-01T00:00:00.000Z',
+      updated_at: '2026-02-02T00:00:00.000Z',
+    })
+
+    expect(result).toEqual({
+      id: '550e8400-e29b-41d4-a716-446655440000',
+      title: 'kubectl get pods -A',
+      body: 'kubectl get pods -A',
+      description: '',
+      tags: ['bash', 'kubectl', 'kubernetes'],
+      language: 'bash',
+      created_at: '2026-02-01T00:00:00.000Z',
+      updated_at: '2026-02-02T00:00:00.000Z',
+    })
+  })
+
+  it('builds command files with generated title and tags when user fields are blank', () => {
+    const result = buildLibraryCommandFileData({
+      title: '',
+      body: 'docker compose logs web',
+      description: '',
+      tags: '',
+      language: 'bash',
+      created_at: '2026-01-01T00:00:00.000Z',
+      updated_at: '2026-01-02T00:00:00.000Z',
+    }, '550e8400-e29b-41d4-a716-446655440000')
+
+    expect(result.title).toBe('docker compose logs web')
+    expect(result.tags).toEqual(['bash', 'docker', 'logs'])
+  })
+
+  it('rejects command file builds with whitespace-only bodies', () => {
+    expect(() => buildLibraryCommandFileData({
+      title: 'Blank Body',
+      body: '   ',
+      description: '',
+      tags: [],
+      language: 'bash',
+    }, '550e8400-e29b-41d4-a716-446655440000')).toThrow(/command body is required/i)
+  })
+
+  it('returns null for parsed command files with whitespace-only bodies', () => {
+    expect(parseLibraryCommandFile({
+      title: 'Blank Body',
+      body: '   ',
+      description: '',
+      tags: [],
+      language: 'bash',
+    })).toBeNull()
+  })
+
+  it('returns null for parsed command files with present non-string titles', () => {
+    expect(parseLibraryCommandFile({
+      title: null,
+      body: 'git status',
+    })).toBeNull()
+
+    expect(parseLibraryCommandFile({
+      title: 0,
+      body: 'git status',
+    })).toBeNull()
+  })
 })

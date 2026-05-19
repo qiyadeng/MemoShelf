@@ -260,7 +260,7 @@ async function createWindow() {
   // Restore window state from settings
   const savedState = settings.get<settings.WindowState | null>('general.windowState')
   const windowOptions: Electron.BrowserWindowConstructorOptions = {
-    title: 'SnipForge',
+    title: 'MemoShelf',
     frame: false,
     width: savedState?.width ?? 800,
     height: savedState?.height ?? 600,
@@ -384,7 +384,7 @@ function createTray() {
   // Create context menu
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: 'Show SnipForge',
+      label: 'Show MemoShelf',
       click: async () => {
         if (!win || win.isDestroyed()) {
           await createWindow()
@@ -403,7 +403,7 @@ function createTray() {
   ])
 
   // Set tooltip and context menu
-  tray.setToolTip('SnipForge')
+  tray.setToolTip('MemoShelf')
   tray.setContextMenu(contextMenu)
 
   // Show window on tray icon click (Windows/Linux)
@@ -437,7 +437,6 @@ function isValidCommandBatch(value: unknown): value is Array<{ title: string; bo
     isValidCommandUpdate(command) &&
     typeof command.title === 'string' &&
     typeof command.body === 'string' &&
-    command.title.trim().length > 0 &&
     command.body.trim().length > 0
   )
 }
@@ -1003,7 +1002,6 @@ ipcMain.handle('library:createCommand', async (_, command: { title: string; body
     !isValidCommandUpdate(command) ||
     typeof command.title !== 'string' ||
     typeof command.body !== 'string' ||
-    !command.title.trim() ||
     !command.body.trim()
   ) {
     return { success: false, error: 'Invalid command data' }
@@ -1032,7 +1030,6 @@ ipcMain.handle('library:updateCommand', async (_, id: number, updates: { title: 
   if (
     typeof id !== 'number' ||
     !isValidCommandUpdate(updates) ||
-    !updates.title.trim() ||
     !updates.body.trim()
   ) {
     return { success: false, error: 'Invalid parameters' }
@@ -1246,7 +1243,7 @@ app.whenReady().then(async () => {
   } catch (error) {
     console.error('App startup failed:', error)
     dialog.showErrorBox(
-      'SnipForge Failed To Start',
+      'MemoShelf Failed To Start',
       (error as Error).message || 'Unknown startup error'
     )
     app.quit()

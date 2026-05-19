@@ -1,136 +1,110 @@
 <p align="center">
-  <img src="app-icon.png" width="120" alt="SnipForge icon">
+  <img src="app-icon.png" width="120" alt="MemoShelf icon">
 </p>
 
-<h1 align="center">SnipForge</h1>
+<h1 align="center">MemoShelf</h1>
 
 <p align="center">
-  <strong>Your commands, one hotkey away.</strong><br>
-  A blazing fast snippet palette that lives on your desktop.<br>
-  Save commands, code blocks, prompts, and templates. Search instantly, copy with variables.
-</p>
-
-<p align="center">
-  <a href="https://snipforge.dev">Website</a> &bull;
-  <a href="https://github.com/ArtluxDM/SnipForge/releases/latest">Download</a> &bull;
-  <a href="https://github.com/sponsors/ArtluxDM">Sponsor</a>
+  <strong>A lightweight memory shelf for things you may need again.</strong><br>
+  Now store it. Later find it.
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/command-palette.png" width="720" alt="SnipForge command palette">
+  <a href="https://github.com/qiyadeng/MemoShelf/releases/latest">Download</a> &bull;
+  <a href="docs/codebase-map.md">Documentation</a>
 </p>
 
-## Why SnipForge
+<p align="center">
+  <img src="docs/screenshots/command-palette.png" width="720" alt="MemoShelf searchable shelf">
+</p>
 
-You have hundreds of commands across Docker, Kubernetes, Git, SSH, APIs, and internal tooling. Some live in Notion, some in Slack messages, some you just google every time. SnipForge puts them all in one place — a global hotkey palette that opens from anywhere, searches instantly, and copies to your clipboard with variable substitution.
+## Why MemoShelf
 
-Teams use it to share command libraries via GitHub repos. New members subscribe to the team library and have every command at their fingertips.
+MemoShelf is a desktop app for saving searchable bits of text, snippets, commands, paths, prompts, notes, and other small pieces of information that are too useful to lose but too lightweight for a full notebook.
+
+It is meant for the in-between things: text you copy often, a path you do not want to rediscover, a setup command you only need once a month, a temporary note that might become useful later, or a small reference you want to keep close.
 
 ## Features
 
-**Global hotkey** — One shortcut opens SnipForge from any app. Type to search, arrow keys to navigate, Enter to copy. Configurable in settings.
+**Body-first capture** - Paste or write the thing you want to remember first. MemoShelf can fill the title and tags from the content, and you can still edit them by hand.
 
-**Variables** — Use `{{variable name}}` templates. When you copy, SnipForge prompts you to fill in each value before it hits your clipboard.
+**Fast fuzzy search** - Search across titles, tags, descriptions, and bodies with a keyboard-friendly palette.
 
-```bash
-/add customer {{Customer Name}}
-```
+**Multiple text formats** - Store plain text, Markdown, rich text, and syntax-highlighted code snippets.
 
-<p align="center">
-  <img src="docs/screenshots/usage-example-variable-substitution.png" width="720" alt="Variable substitution prompt">
-</p>
+**Template variables** - Use `{{variable name}}` placeholders and fill them in when copying.
 
-**Multi-format editors** — Plain text, rich text (TipTap), Markdown, and syntax-highlighted code for 15+ languages (JavaScript, Python, Go, Rust, Bash, SQL, YAML, and more).
+**Local-first storage** - Data stays on your machine with SQLite and file-backed libraries. GitHub-backed libraries are optional for sharing or syncing.
 
-**Team libraries** — Share command collections through GitHub repos or local folders. Curators publish, members subscribe. Auto-sync keeps everyone current.
-
-**Privacy-first** — Everything stays on your machine. SQLite database, no cloud, no accounts required, no telemetry. GitHub auth is optional and only used for team library sync.
-
-**Keyboard-driven** — Full navigation without a mouse. Customizable shortcuts for every action.
-
-## The Armory
-
-SnipForge ships with **The Armory** — a curated starter library of 477 commands across 39 categories including Git, Docker, Kubernetes, SSH, curl, PostgreSQL, nginx, n8n, and more. Import it from `The Armory/` in this repo, or use it as a reference for building your own libraries.
+**Lightweight by design** - MemoShelf sits between a notebook and a command launcher: less ceremony than notes, more durable than clipboard history.
 
 ## Download
 
-Get the latest release from the [Releases page](https://github.com/ArtluxDM/SnipForge/releases/latest):
+Get the latest build from the [Releases page](https://github.com/qiyadeng/MemoShelf/releases/latest).
 
-| Platform | Format |
-|----------|--------|
-| macOS | `.dmg` |
-| Windows | `.exe` |
-| Linux | `.AppImage`, `.deb`, `.rpm` |
-
-> **macOS note**: The app isn't code signed yet. Right-click > "Open" > "Open" to bypass Gatekeeper, or run `xattr -cr /Applications/SnipForge.app` in Terminal.
+The first public Windows build is packaged as an `.exe` installer.
 
 ## Quick Start
 
-1. Install and launch SnipForge
-2. Press `Cmd+Shift+Space` (or `Ctrl+Shift+Space`) to open the palette
-3. Start typing to search — results update in real time
-4. Press `Enter` or `C` to copy a command
-5. If the command has `{{variables}}`, fill in the values when prompted
+1. Install and launch MemoShelf.
+2. Choose a default writable library folder on first run.
+3. Press `Cmd+Shift+Space` or `Ctrl+Shift+Space` to show the shelf.
+4. Press `N` to add a new memory.
+5. Paste the body first; title and tags are generated automatically.
+6. Search later and press `Enter` or `C` to copy.
 
-### Keyboard Shortcuts
+## Keyboard Shortcuts
 
 | Key | Action |
 |-----|--------|
 | `Arrow Keys` | Navigate list |
-| `C` / `Enter` | Copy command |
-| `Shift+C` | Copy with variables intact |
-| `N` | New command |
-| `E` | Edit selected |
-| `Backspace` | Delete selected |
-| `Escape` | Clear search / close |
+| `C` / `Enter` | Copy selected memory |
+| `Shift+C` | Copy template with variables intact |
+| `N` | New memory |
+| `E` | Edit selected memory |
+| `Backspace` | Delete selected memory |
+| `Escape` | Clear search or close |
 | `S` | Settings |
 
 All shortcuts are customizable in Settings > General.
 
-### Team Libraries
+## Libraries
 
-1. Open Settings > **Libraries**
-2. Sign in with GitHub (Settings > Connectors)
-3. Enter a repo URL (e.g., `org/team-commands`)
-4. Click **Subscribe** — commands sync to your palette
+MemoShelf supports local folders and GitHub-backed libraries. A library is a folder of JSON files that can be searched, copied, imported, exported, and optionally synced.
 
-Libraries support auto-sync, local folders, and role-based permissions (owner/curator/consumer). See [docs/remote-libraries.md](docs/remote-libraries.md) for details.
+Compatibility note: this version keeps SnipForge-compatible library files such as `.snipforge.json` so existing libraries continue to work while the product moves to the MemoShelf name.
 
 ## Build from Source
 
 ```bash
-git clone https://github.com/ArtluxDM/SnipForge.git
-cd SnipForge
+git clone https://github.com/qiyadeng/MemoShelf.git
+cd MemoShelf
 pnpm install
-pnpm dev       # development
-pnpm build     # production build
-pnpm test:db   # rebuild better-sqlite3 and run the SQLite test suite
+pnpm dev
+pnpm build:fast
+pnpm build:app
 ```
+
+`pnpm build:fast` rebuilds native Electron dependencies only when needed, then runs the Vite build. `pnpm build:app` does the same and packages the desktop app with electron-builder.
 
 ## Tech Stack
 
 | Layer | Technology |
-|-------|-----------|
+|-------|------------|
 | Desktop | Electron + Vue 3 + Vite + TypeScript |
 | Database | SQLite via better-sqlite3 |
-| Editors | CodeMirror 6 (code/markdown), TipTap (rich text) |
-| Search | Fuse.js (weighted fuzzy search) |
-| UI | Lucide icons, Virtua (virtual scrolling), highlight.js |
+| Editors | CodeMirror 6, TipTap |
+| Search | Fuse.js |
+| UI | Lucide icons, Virtua, highlight.js |
 
 ## Documentation
 
-- [Remote Libraries](docs/remote-libraries.md) — GitHub/local library setup, sync algorithm, publishing
-- [DB Health](docs/db-health.md) — SQLite maintenance checks and DB test recovery
-- [Codebase Map](docs/codebase-map.md) — File reference, architecture, IPC channels
-- [Settings](docs/settings.md) — Configuration, hotkey remapping, auto-sync
-- [Variable Substitution](docs/variable-substitution.md) — Template syntax and copy flow
-
-## Support
-
-SnipForge is built and maintained independently. If you or your team uses it, consider [sponsoring the project](https://github.com/sponsors/ArtluxDM) to keep development active.
+- [Remote Libraries](docs/remote-libraries.md)
+- [DB Health](docs/db-health.md)
+- [Codebase Map](docs/codebase-map.md)
+- [Settings](docs/settings.md)
+- [Variable Substitution](docs/variable-substitution.md)
 
 ## License
 
-[GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0). Free to use, modify, and distribute. Modifications must be released under AGPL with full source code.
-
-For commercial licensing inquiries, reach out at [contact@snipforge.dev](mailto:contact@snipforge.dev).
+[GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0).

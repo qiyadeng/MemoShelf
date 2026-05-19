@@ -26,6 +26,9 @@ import {
     scanLocalFolder,
     setupDefaultWritableLocalLibrary,
     slugify,
+    startFileWatchers,
+    stopFileWatchers,
+    onFileWatcherSync,
     updateLibraryOrigin,
     updateLocalLibraryCommand,
 } from '../electron/main/local-library'
@@ -144,7 +147,7 @@ describe('scanLocalFolder', () => {
         await expect(scanLocalFolder(tmpDir)).rejects.toThrow('missing "name" field')
     })
 
-    it('skips files without title or body', async () => {
+    it('skips files without usable body while accepting titleless commands', async () => {
         await fs.writeFile(path.join(tmpDir, '.snipforge.json'), JSON.stringify({
             name: 'Test', description: '', format_version: '1.0',
         }))
@@ -159,6 +162,11 @@ describe('scanLocalFolder', () => {
             title: 'No Body',
         }))
 
+        // Blank body
+        await fs.writeFile(path.join(tmpDir, 'blank-body.json'), JSON.stringify({
+            title: 'Blank Body', body: '   ',
+        }))
+
         // Missing title
         await fs.writeFile(path.join(tmpDir, 'no-title.json'), JSON.stringify({
             body: 'echo no title',
@@ -170,8 +178,14 @@ describe('scanLocalFolder', () => {
         }))
 
         const result = await scanLocalFolder(tmpDir)
-        expect(result.commands).toHaveLength(1)
-        expect(result.commands[0].command.title).toBe('Valid')
+        expect(result.commands).toHaveLength(3)
+
+        const commandsByPath = new Map(result.commands.map(command => [command.path, command.command]))
+        expect(commandsByPath.get('valid.json')?.title).toBe('Valid')
+        expect(commandsByPath.get('no-title.json')?.title).toBe('echo no title')
+        expect(commandsByPath.get('empty-title.json')?.title).toBe('echo empty')
+        expect(commandsByPath.has('no-body.json')).toBe(false)
+        expect(commandsByPath.has('blank-body.json')).toBe(false)
     })
 
     it('skips invalid JSON files gracefully', async () => {
@@ -839,6 +853,35 @@ describe('local library CRUD', () => {
         expect(db.getRemoteCommands(setup.library.id)).toHaveLength(0)
     })
 
+    it('creates body-first commands using generated title and tags for file names, file data, and index data', async () => {
+        const setup = await setupDefaultWritableLocalLibrary(tmpDir)
+
+        const createResult = await createLocalLibraryCommand({
+            title: '',
+            body: '  kubectl get pods -A  ',
+            description: '  list all pods  ',
+            tags: '',
+            language: '  BASH  ',
+        })
+
+        expect(createResult.success).toBe(true)
+
+        const [indexedCommand] = db.getRemoteCommands(setup.library.id)
+        expect(indexedCommand.remote_path).toBe('kubectl-get-pods-a.json')
+        expect(indexedCommand.title).toBe('kubectl get pods -A')
+        expect(indexedCommand.body).toBe('kubectl get pods -A')
+        expect(indexedCommand.description).toBe('list all pods')
+        expect(indexedCommand.tags).toBe('["bash","kubectl","kubernetes"]')
+        expect(indexedCommand.language).toBe('bash')
+
+        const savedFile = JSON.parse(await fs.readFile(path.join(tmpDir, indexedCommand.remote_path as string), 'utf8'))
+        expect(savedFile.title).toBe('kubectl get pods -A')
+        expect(savedFile.body).toBe('kubectl get pods -A')
+        expect(savedFile.description).toBe('list all pods')
+        expect(savedFile.tags).toEqual(['bash', 'kubectl', 'kubernetes'])
+        expect(savedFile.language).toBe('bash')
+    })
+
     it('extracts rich text images into library attachments and indexes them back as local file URLs', async () => {
         const setup = await setupDefaultWritableLocalLibrary(tmpDir)
         const richBody = `<p>Checklist</p><img src="${TINY_PNG_DATA_URI}" alt="tiny">`
@@ -878,6 +921,128 @@ describe('local library CRUD', () => {
         expect(updatedFile.body).toContain(savedSrcMatch![1])
         expect(updatedFile.body).not.toContain('file://')
         expect(updatedCommand.body).toContain(pathToFileURL(attachmentPath).href)
+    })
+
+    it('does not generate rich text tags from inline image data payloads', async () => {
+        const setup = await setupDefaultWritableLocalLibrary(tmpDir)
+        const imageWithKeywordPayload = 'data:image/png;base64,api'
+
+        const createResult = await createLocalLibraryCommand({
+            title: '',
+            body: `<p>Screenshot attached</p><img src="${imageWithKeywordPayload}" alt="inline">`,
+            description: '',
+            tags: '',
+            language: 'richtext',
+        })
+
+        expect(createResult.success).toBe(true)
+
+        const [indexedCommand] = db.getRemoteCommands(setup.library.id)
+        expect(indexedCommand.tags).toBe('[]')
+        expect(indexedCommand.language).toBe('richtext')
+        expect(indexedCommand.body).not.toContain('data:image')
+
+        const savedFile = JSON.parse(await fs.readFile(path.join(tmpDir, indexedCommand.remote_path as string), 'utf8'))
+        expect(savedFile.tags).toEqual([])
+        expect(savedFile.body).not.toContain('data:image')
+        expect(savedFile.body).toContain('attachments/')
+    })
+
+    it('does not generate full-sync rich text tags from image sources', async () => {
+        await fs.writeFile(path.join(tmpDir, '.snipforge.json'), JSON.stringify({
+            snipforge: 'library',
+            name: 'Full Sync Rich Text',
+            description: '',
+            format_version: '1.0',
+        }, null, 2) + '\n')
+
+        const attachmentDir = path.join(tmpDir, 'attachments', '11111111-1111-1111-1111-111111111111')
+        await fs.mkdir(attachmentDir, { recursive: true })
+        await fs.writeFile(path.join(attachmentDir, 'image-api.png'), 'not really an image')
+
+        await fs.writeFile(path.join(tmpDir, 'inline-image.json'), JSON.stringify({
+            snipforge: 'command',
+            id: '22222222-2222-2222-2222-222222222222',
+            title: 'Inline Image',
+            body: '<p>Screenshot attached</p><img src="data:image/png;base64,api" alt="inline">',
+            description: '',
+            tags: '',
+            language: 'richtext',
+            created_at: '2026-01-01T00:00:00.000Z',
+            updated_at: '2026-01-01T00:00:00.000Z',
+        }, null, 2) + '\n')
+
+        await fs.writeFile(path.join(tmpDir, 'relative-image.json'), JSON.stringify({
+            snipforge: 'command',
+            id: '33333333-3333-3333-3333-333333333333',
+            title: 'Relative Image',
+            body: '<p>Screenshot attached</p><img src="attachments/11111111-1111-1111-1111-111111111111/image-api.png" alt="relative">',
+            description: '',
+            tags: '',
+            language: 'richtext',
+            created_at: '2026-01-01T00:00:00.000Z',
+            updated_at: '2026-01-01T00:00:00.000Z',
+        }, null, 2) + '\n')
+
+        const opened = await openLocalFolder(tmpDir)
+        if ('needsPick' in opened) {
+            throw new Error('Expected local library to open directly')
+        }
+
+        const commands = db.getRemoteCommands(opened.library.id)
+        expect(commands).toHaveLength(2)
+        expect(commands.map(command => command.tags)).toEqual(['[]', '[]'])
+    })
+
+    it('normalizes rich text metadata and attachment URLs from watcher updates', async () => {
+        const setup = await setupDefaultWritableLocalLibrary(tmpDir)
+
+        const createResult = await createLocalLibraryCommand({
+            title: 'Watcher Rich Text',
+            body: `<p>Before</p><img src="${TINY_PNG_DATA_URI}" alt="tiny">`,
+            description: '',
+            tags: '',
+            language: 'richtext',
+        })
+
+        expect(createResult.success).toBe(true)
+
+        const [createdCommand] = db.getRemoteCommands(setup.library.id)
+        const commandPath = path.join(tmpDir, createdCommand.remote_path as string)
+        const savedFile = JSON.parse(await fs.readFile(commandPath, 'utf8'))
+        const savedSrc = savedFile.body.match(/src="([^"]+)"/)?.[1] as string
+        const attachmentPath = path.join(tmpDir, savedSrc)
+
+        const watcherResult = new Promise<void>((resolve, reject) => {
+            const timeout = setTimeout(() => reject(new Error('Timed out waiting for watcher sync')), 10000)
+            onFileWatcherSync((libraryId, result) => {
+                if (libraryId !== setup.library.id) return
+                clearTimeout(timeout)
+                if (result.errors.length > 0) {
+                    reject(new Error(result.errors.join('; ')))
+                    return
+                }
+                resolve()
+            })
+        })
+
+        try {
+            startFileWatchers()
+
+            savedFile.body = `<p>Watcher update</p><img src="${savedSrc}" alt="tiny"><img src="data:image/png;base64,api" alt="inline">`
+            savedFile.tags = ''
+            savedFile.updated_at = '2099-01-01T00:00:00.000Z'
+            await fs.writeFile(commandPath, JSON.stringify(savedFile, null, 2) + '\n', 'utf8')
+
+            await watcherResult
+        } finally {
+            stopFileWatchers()
+            onFileWatcherSync(() => {})
+        }
+
+        const [updatedCommand] = db.getRemoteCommands(setup.library.id)
+        expect(updatedCommand.body).toContain(pathToFileURL(attachmentPath).href)
+        expect(updatedCommand.tags).toBe('[]')
     })
 
     it('cleans orphaned rich text attachments on update and delete', async () => {
@@ -954,6 +1119,41 @@ describe('local library CRUD', () => {
         expect(renamedFile.body).toBe('git commit --fixup HEAD')
     })
 
+    it('renames writable command files from generated titles when edited body-first', async () => {
+        const setup = await setupDefaultWritableLocalLibrary(tmpDir)
+
+        await createLocalLibraryCommand({
+            title: 'Old Title',
+            body: 'echo old',
+            description: '',
+            tags: '[]',
+            language: 'bash',
+        })
+
+        const [createdCommand] = db.getRemoteCommands(setup.library.id)
+        const updateResult = await updateLocalLibraryCommand(createdCommand.id, {
+            title: '',
+            body: '  docker compose logs web  ',
+            description: '  service logs  ',
+            tags: '',
+            language: '  BASH  ',
+        })
+
+        expect(updateResult.success).toBe(true)
+
+        const [updatedCommand] = db.getRemoteCommands(setup.library.id)
+        expect(updatedCommand.remote_path).toBe('docker-compose-logs-web.json')
+        expect(updatedCommand.title).toBe('docker compose logs web')
+        expect(updatedCommand.body).toBe('docker compose logs web')
+        expect(updatedCommand.tags).toBe('["bash","docker","logs"]')
+        await expect(fs.access(path.join(tmpDir, createdCommand.remote_path as string))).rejects.toThrow()
+
+        const updatedFile = JSON.parse(await fs.readFile(path.join(tmpDir, updatedCommand.remote_path as string), 'utf8'))
+        expect(updatedFile.title).toBe('docker compose logs web')
+        expect(updatedFile.body).toBe('docker compose logs web')
+        expect(updatedFile.tags).toEqual(['bash', 'docker', 'logs'])
+    })
+
     it('batches command creation into a single local-library sync', async () => {
         const setup = await setupDefaultWritableLocalLibrary(tmpDir)
 
@@ -985,6 +1185,40 @@ describe('local library CRUD', () => {
         expect(commands.map(command => command.title).sort()).toEqual(['Git Pull', 'Git Status'])
     })
 
+    it('batches body-first command creation using generated titles for filenames', async () => {
+        const setup = await setupDefaultWritableLocalLibrary(tmpDir)
+
+        const result = await createLocalLibraryCommands([
+            {
+                title: '',
+                body: 'kubectl get pods -A',
+                description: '',
+                tags: '',
+                language: 'bash',
+            },
+            {
+                title: '',
+                body: 'docker compose logs web',
+                description: '',
+                tags: '',
+                language: 'bash',
+            },
+        ])
+
+        expect(result.success).toBe(true)
+        expect(result.succeeded).toBe(2)
+
+        const commands = db.getRemoteCommands(setup.library.id)
+        expect(commands.map(command => command.remote_path).sort()).toEqual([
+            'docker-compose-logs-web.json',
+            'kubectl-get-pods-a.json',
+        ])
+        expect(commands.map(command => command.title).sort()).toEqual([
+            'docker compose logs web',
+            'kubectl get pods -A',
+        ])
+    })
+
     it('duplicates read-only library command edits into the default writable library', async () => {
         const setup = await setupDefaultWritableLocalLibrary(tmpDir)
         const consumerRoot = path.join(tmpDir, 'consumer-library')
@@ -1014,11 +1248,11 @@ describe('local library CRUD', () => {
 
         const [readOnlyCommand] = db.getRemoteCommands(opened.library.id)
         const result = await updateLocalLibraryCommand(readOnlyCommand.id, {
-            title: 'Forked Edit',
-            body: 'echo forked edit',
+            title: '',
+            body: '  docker compose logs web  ',
             description: 'edited copy',
-            tags: '["forked"]',
-            language: 'bash',
+            tags: '',
+            language: '  BASH  ',
         })
 
         expect(result.success).toBe(true)
@@ -1030,9 +1264,10 @@ describe('local library CRUD', () => {
 
         const defaultCommands = db.getRemoteCommands(setup.library.id)
         expect(defaultCommands).toHaveLength(1)
-        expect(defaultCommands[0].title).toBe('Forked Edit')
-        expect(defaultCommands[0].body).toBe('echo forked edit')
-        expect(defaultCommands[0].remote_path).toBe('forked-edit.json')
+        expect(defaultCommands[0].title).toBe('docker compose logs web')
+        expect(defaultCommands[0].body).toBe('docker compose logs web')
+        expect(defaultCommands[0].tags).toBe('["bash","docker","logs"]')
+        expect(defaultCommands[0].remote_path).toBe('docker-compose-logs-web.json')
     })
 
     it('blocks deleting read-only library cache rows', async () => {
@@ -1083,16 +1318,18 @@ describe('local library CRUD', () => {
         })
 
         const updateResult = await updateLocalLibraryCommand(commandId, {
-            title: 'Legacy Command Updated',
-            body: 'echo legacy updated',
+            title: '',
+            body: '  docker compose logs web  ',
             description: 'still local',
-            tags: '["legacy"]',
-            language: 'bash',
+            tags: '',
+            language: '  BASH  ',
         })
 
         expect(updateResult.success).toBe(true)
         expect(updateResult.mode).toBe('database')
-        expect(db.getAllCommands()[0].title).toBe('Legacy Command Updated')
+        expect(db.getAllCommands()[0].title).toBe('docker compose logs web')
+        expect(db.getAllCommands()[0].body).toBe('docker compose logs web')
+        expect(db.getAllCommands()[0].tags).toBe('["bash","docker","logs"]')
 
         const deleteResult = await deleteLocalLibraryCommand(commandId)
         expect(deleteResult.success).toBe(true)

@@ -309,7 +309,7 @@ function parseCommandEntries(entries: TreeEntry[], dirPath: string): Array<{ pat
 }
 
 /**
- * Discover all SnipForge libraries in a repo.
+ * Discover all MemoShelf-compatible libraries in a repo.
  * Uses REST recursive tree (1 call) + GraphQL aliased blob reads (1 call) = 2 calls total.
  */
 async function discoverLibraries(owner: string, repo: string, context: RepoContext): Promise<DiscoveredLibrary[]> {
@@ -597,7 +597,7 @@ export async function browseLibrary(repoUrl: string, ctx?: RepoContext): Promise
         // Find manifest in the directory entries
         const manifestEntry = entries.find(e => e.name === '.snipforge.json' && e.type === 'blob')
         if (!manifestEntry?.object?.text) {
-            throw new Error('Not a SnipForge library — missing .snipforge.json manifest')
+            throw new Error('Not a MemoShelf-compatible library — missing .snipforge.json manifest')
         }
 
         const manifest = JSON.parse(manifestEntry.object.text) as LibraryManifest
@@ -614,7 +614,7 @@ export async function browseLibrary(repoUrl: string, ctx?: RepoContext): Promise
     const tree = await getRepoTree(owner, repo, context.branch)
     const manifestFile = tree.find(f => f.path.endsWith('.snipforge.json') && f.type === 'blob')
     if (!manifestFile) {
-        throw new Error('Not a SnipForge library — missing .snipforge.json manifest')
+        throw new Error('Not a MemoShelf-compatible library — missing .snipforge.json manifest')
     }
 
     // Determine manifest's parent directory
@@ -629,7 +629,7 @@ export async function browseLibrary(repoUrl: string, ctx?: RepoContext): Promise
     // Parse manifest from entries
     const manifestEntry = entries.find(e => e.name === '.snipforge.json' && e.type === 'blob')
     if (!manifestEntry?.object?.text) {
-        throw new Error('Not a SnipForge library — missing .snipforge.json manifest')
+        throw new Error('Not a MemoShelf-compatible library — missing .snipforge.json manifest')
     }
     const manifest = JSON.parse(manifestEntry.object.text) as LibraryManifest
     const commands = parseCommandEntries(entries, manifestDir)
@@ -856,7 +856,7 @@ export async function initLibrary(libraryId: number, name: string, description: 
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            message: `Initialize SnipForge library`,
+            message: `Initialize MemoShelf library`,
             content,
             branch,
         }),

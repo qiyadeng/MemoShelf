@@ -2,6 +2,12 @@ import Database from "better-sqlite3";
 import path from "node:path";
 import { app } from "electron";
 import type { Command, Library, LibraryType, LibraryPermission, SyncResult } from "../../shared/types";
+import {
+    normalizeCommandLanguage,
+    normalizeCommandTitle,
+    serializeCommandTags,
+    stripRichTextImageSourcesForMetadata,
+} from "../../shared/command-metadata";
 
 export type { Command, Library }
 type LibraryRow = Omit<Library, 'local_path' | 'origin' | 'working_copy'> & {
@@ -170,7 +176,7 @@ export function updateCommand(id: number, updates: Partial<Command>): boolean{
     if (!db) throw new Error("Database not initialized");
 
     const now = new Date().toISOString();
-    const title = (updates.title || '').slice(0, MAX_TITLE_LENGTH)
+    const normalized = normalizeDbCommand(updates)
     const stmt = db.prepare(`
         UPDATE commands
         SET title = ?, body = ?, description = ?, tags = ?, language = ?, updated_at = ?,
@@ -178,11 +184,11 @@ export function updateCommand(id: number, updates: Partial<Command>): boolean{
         WHERE id = ?
     `);
     const result = stmt.run(
-        title,
-        updates.body || '',
-        updates.description || '',
-        updates.tags || '[]',
-        updates.language || 'plaintext',
+        normalized.title,
+        normalized.body,
+        normalized.description,
+        normalized.tags,
+        normalized.language,
         now,
         id
     );
@@ -214,20 +220,72 @@ export function deleteCommandsByIds(ids: number[]): number {
 // add a new command to DB
 const MAX_TITLE_LENGTH = 500
 
+type DbCommandInput = {
+    title?: unknown
+    body?: unknown
+    description?: unknown
+    tags?: unknown
+    language?: unknown
+}
+
+function normalizeRequiredDbBody(body: unknown): string {
+    const normalized = typeof body === 'string' ? body.trim() : ''
+    if (!normalized) {
+        throw new Error('Command body is required')
+    }
+    return normalized
+}
+
+function normalizeDbCommand(command: DbCommandInput): Pick<Command, 'title' | 'body' | 'description' | 'tags' | 'language'> {
+    const body = normalizeRequiredDbBody(command.body)
+    const language = normalizeCommandLanguage(command.language)
+    const metadataBody = language === 'richtext' ? stripRichTextImageSourcesForMetadata(body) : body
+
+    return {
+        title: normalizeCommandTitle(command.title, metadataBody).slice(0, MAX_TITLE_LENGTH),
+        body,
+        description: typeof command.description === 'string' ? command.description.trim() : '',
+        tags: serializeDbCommandTags(command.tags, metadataBody, language),
+        language,
+    }
+}
+
+function serializeDbCommandTags(tags: unknown, body: string, language: string): string {
+    if (language === 'richtext' && Array.isArray(tags) && tags.length === 0) {
+        return '[]'
+    }
+
+    if (language === 'richtext' && typeof tags === 'string') {
+        const trimmed = tags.trim()
+        if (trimmed) {
+            try {
+                const parsed = JSON.parse(trimmed)
+                if (Array.isArray(parsed) && parsed.length === 0) {
+                    return '[]'
+                }
+            } catch {
+                // Non-JSON strings continue through shared tag normalization.
+            }
+        }
+    }
+
+    return serializeCommandTags(tags as string[] | string | null | undefined, body, language)
+}
+
 export function addCommand(command: Omit<Command, 'id' | 'created_at' | 'updated_at'>): number {
     if (!db) throw new Error("Database not initialized");
-    const title = command.title?.slice(0, MAX_TITLE_LENGTH)
+    const normalized = normalizeDbCommand(command)
     const now = new Date().toISOString();
     const stmt = db.prepare(`
         INSERT INTO commands (title, body, description, tags, language, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
     const result = stmt.run(
-        title,
-        command.body,
-        command.description || '',
-        command.tags || '[]',
-        command.language || 'plaintext',
+        normalized.title,
+        normalized.body,
+        normalized.description,
+        normalized.tags,
+        normalized.language,
         now,
         now
     );
@@ -246,13 +304,13 @@ export function addCommands(commands: Array<Omit<Command, 'id' | 'created_at' | 
     const transaction = db.transaction((items: Array<Omit<Command, 'id' | 'created_at' | 'updated_at'>>) => {
         let inserted = 0
         for (const command of items) {
-            const title = command.title?.slice(0, MAX_TITLE_LENGTH)
+            const normalized = normalizeDbCommand(command)
             stmt.run(
-                title,
-                command.body,
-                command.description || '',
-                command.tags || '[]',
-                command.language || 'plaintext',
+                normalized.title,
+                normalized.body,
+                normalized.description,
+                normalized.tags,
+                normalized.language,
                 now,
                 now
             )
@@ -284,10 +342,10 @@ export function seedTestData(): void {
 
     //sample welcome command
     insertCommand.run(
-        'Welcome to SnipForge!',
+        'Welcome to MemoShelf!',
         'You can create snippets in plain text or markdown, and add variables with the following syntax {{variable name}}. Read the help section for more.',
         'This section is used to describe your snippets and it also supports markdown, cool right?',
-        '["snipforge", "by_artluxdm"]',
+        '["memoshelf", "welcome"]',
         'markdown',
         now,
         now
@@ -444,15 +502,16 @@ export function addRemoteCommand(
     command: { title: string; body: string; description: string; tags: string; language: string; created_at: string; updated_at: string }
 ): number {
     if (!db) throw new Error("Database not initialized")
+    const normalized = normalizeDbCommand(command)
     const result = db.prepare(`
         INSERT INTO commands (title, body, description, tags, language, source, library_id, remote_path, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, 'remote', ?, ?, ?, ?)
     `).run(
-        command.title,
-        command.body,
-        command.description,
-        command.tags,
-        command.language,
+        normalized.title,
+        normalized.body,
+        normalized.description,
+        normalized.tags,
+        normalized.language,
         libraryId,
         remotePath,
         command.created_at,
@@ -467,16 +526,17 @@ export function updateRemoteCommand(
     command: { title: string; body: string; description: string; tags: string; language: string; updated_at: string }
 ): boolean {
     if (!db) throw new Error("Database not initialized")
+    const normalized = normalizeDbCommand(command)
     const result = db.prepare(`
         UPDATE commands
         SET title = ?, body = ?, description = ?, tags = ?, language = ?, updated_at = ?
         WHERE library_id = ? AND remote_path = ? AND source = 'remote'
     `).run(
-        command.title,
-        command.body,
-        command.description,
-        command.tags,
-        command.language,
+        normalized.title,
+        normalized.body,
+        normalized.description,
+        normalized.tags,
+        normalized.language,
         command.updated_at,
         libraryId,
         remotePath
@@ -489,17 +549,18 @@ export function updateRemoteCommandById(
     updates: { remote_path: string; title: string; body: string; description: string; tags: string; language: string; created_at: string; updated_at: string }
 ): boolean {
     if (!db) throw new Error("Database not initialized")
+    const normalized = normalizeDbCommand(updates)
     const result = db.prepare(`
         UPDATE commands
         SET remote_path = ?, title = ?, body = ?, description = ?, tags = ?, language = ?, created_at = ?, updated_at = ?
         WHERE id = ? AND source = 'remote'
     `).run(
         updates.remote_path,
-        updates.title,
-        updates.body,
-        updates.description,
-        updates.tags,
-        updates.language,
+        normalized.title,
+        normalized.body,
+        normalized.description,
+        normalized.tags,
+        normalized.language,
         updates.created_at,
         updates.updated_at,
         id
